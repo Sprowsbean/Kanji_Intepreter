@@ -4,7 +4,7 @@ import { CameraCapture } from './components/CameraCapture';
 import { LoadingAnimation } from './components/LoadingAnimation';
 import { ResultsView } from './components/ResultsView';
 import { ErrorView } from './components/ErrorView';
-import { analyzeKanjiImage } from './services/gemini';
+import { analyzeKanjiImage } from './services/api';
 import type { KanjiCard } from './types/kanji';
 
 type AppState = 'home' | 'camera' | 'loading' | 'results' | 'error';
