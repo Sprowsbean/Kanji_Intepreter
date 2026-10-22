@@ -3,6 +3,7 @@ No API keys, no tokens. Run: uvicorn main:app --reload --port 8000
 """
 import os
 import re
+from collections import Counter
 from pathlib import Path
 
 # keep the OCR model cache next to the code (not in the user's home on C:); Docker sets HF_HOME itself
@@ -37,12 +38,22 @@ def romaji(kana: str) -> str:
 
 KANJI = re.compile(r"[一-鿿々]")
 KATA = re.compile(r"[ァ-ヶー]")
+JP = re.compile(r"[ぁ-ゖァ-ヶー一-鿿々]")
 # kanji the OCR confuses with katakana: 力/カ, 口/ロ, 工/エ, 二/ニ, 夕/タ, 卜/ト, 八/ハ, 一/ー
 LOOKALIKE = str.maketrans("力口工二夕卜八一", "カロエニタトハー")
 SKIP = set("、・，, 　()（）「」")
 
 DET_THRESHOLD = 0.15  # the default 0.5 misses big standalone kanji (a table or poster of single characters, 一)
 BOX_PAD = 0.15       # detector boxes often clip tall kanji (対 read as 文リ); also try a padded box
+# mean recognizer confidence on Japanese chars: upright text measured 0.78-0.97, sideways/upside-down <= 0.51
+UPRIGHT_CONF = 0.7   # at or above: the image is upright, skip trying rotations
+ROTATED_MIN_CONF = 0.6  # a rotation must reach this to count as real text (not junk from an English image)
+# fake kanji (read from textures, patterns, English): measured on 108 images, these rules cut them from
+# 140 to 16 while keeping all 602 real ones (a real 無 can score 0.15 inside an otherwise confident line)
+KANJI_MIN_CONF = 0.4     # a kanji below this is dropped...
+KANJI_CTX_CONF = 0.8     # ...unless the rest of its line averages at least this
+JUNK_LINE_CONF = 0.5     # a line averaging below this is junk
+LONE_STROKE_CONF = 0.7   # a lone 一 needs this: pencil underlines/arrows read as 一 at 0.44-0.57, a real one 0.88
 
 
 def fix_lookalikes(line: str) -> str:
@@ -83,13 +94,13 @@ def _pick(a: dict, b: dict) -> dict:
     return a if _conf(a) >= _conf(b) else b
 
 
-def _split_gaps(line: dict) -> list[str]:
+def _split_gaps(line: dict) -> list[list[dict]]:
     """The detector joins items in one row (日 ... 天 -> 日天); split where the gap exceeds a character."""
     chars = [c for c in line["chars"] if c["char"].strip()]
     if not chars:
         return []
     if line["is_vertical"]:  # vertical char boxes are not reliable enough to split on
-        return ["".join(c["char"] for c in chars)]
+        return [chars]
     segs = [[chars[0]]]
     for a, b in zip(chars, chars[1:]):
         size = max(a["bbox"][3] - a["bbox"][1], b["bbox"][3] - b["bbox"][1])
@@ -98,7 +109,7 @@ def _split_gaps(line: dict) -> list[str]:
         if a["char"] not in SKIP and b["char"] not in SKIP and b["bbox"][0] - a["bbox"][2] > size * 0.4:
             segs.append([])
         segs[-1].append(b)
-    return ["".join(c["char"] for c in s) for s in segs]
+    return segs
 
 
 def _is_slice(b: dict, boxes: list[dict]) -> bool:
@@ -113,18 +124,134 @@ def _is_slice(b: dict, boxes: list[dict]) -> bool:
     return False
 
 
-def ocr_lines(img) -> list[str]:
+def _grid_cells(col, em: int) -> list[tuple[int, int]]:
+    """Cut a vertical column into character cells. In tategaki every character (small kana too)
+    takes one em-square slot, so find the slot pitch from the darkness profile, cut at its lightest rows."""
+    g = cv2.GaussianBlur(cv2.cvtColor(col, cv2.COLOR_BGR2GRAY), (3, 3), 0).astype(np.float32)
+    dark = np.clip(np.percentile(g, 90) - g - 25, 0, None)  # -25 ignores paper texture / camera noise
+    prof = dark.sum(axis=1)
+    if prof.max() <= 0:
+        return []
+    on = np.flatnonzero(prof > 0.08 * prof.max())
+    top, end = int(on[0]), int(on[-1]) + 1
+    x = prof[top:end] - prof[top:end].mean()
+    lo, hi = int(0.8 * em), int(1.7 * em)
+    if lo > 0 and len(x) > hi + 2:  # pitch = strongest repeat distance (autocorrelation)
+        ac = [float(np.dot(x[:-k], x[k:])) / (len(x) - k) for k in range(lo, hi)]
+        pitch = lo + int(np.argmax(ac))
+    else:
+        pitch = int(1.1 * em)
+    cells, y = [], max(0, top - int(0.1 * pitch))
+    while y < end - 0.3 * pitch:
+        a, b = int(y + 0.75 * pitch), min(len(prof), int(y + 1.25 * pitch) + 1)
+        cut = a + int(np.argmin(prof[a:b])) if b > a else len(prof)
+        cells.append((y, cut))
+        y = cut
+    if y < end:
+        cells.append((y, min(len(prof), end + int(0.1 * pitch))))
+    ink = [prof[a:b].sum() for a, b in cells]
+    return [c for c, i in zip(cells, ink) if i > 0.05 * np.median(ink)]
+
+
+def _read_vertical(img, box) -> dict:
+    """meikiocr's vertical recognizer drops and garbles characters; its horizontal one is strong.
+    So cut the column into characters, lay them side by side, and read that as a horizontal line."""
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
+    p = (x2 - x1) // 6
+    col = img[max(0, y1 - p):min(h, y2 + p), max(0, x1 - p):min(w, x2 + p)]
+    cells = _grid_cells(col, x2 - x1)
+    if not cells:
+        return {"text": "", "chars": [], "is_vertical": True}
+    cw = col.shape[1]
+    side = max(cw, max(b - a for a, b in cells))
+    squares = []
+    for a, b in cells:  # each character centred in a white square so small kana keep their size
+        sq = np.full((side, side, 3), 255, np.uint8)
+        oy, ox = (side - (b - a)) // 2, (side - cw) // 2
+        sq[oy:oy + b - a, ox:ox + cw] = col[a:b]
+        squares.append(sq)
+    line = cv2.hconcat(squares)
+    line = cv2.resize(line, (max(1, line.shape[1] * 64 // side), 64))
+    chars = [dict(c) for c in ocr.run_recognition([line])[0]["chars"]]
+    for prev, c in zip(chars, chars[1:]):
+        # a vertical ー laid flat reads as a bar, I or 「 (ニャ「 -> ニャー, ジュIス -> ジュース)
+        if c["char"] in "|｜丨「Il1" and KATA.match(prev["char"]):
+            c["char"] = "ー"
+    return {"text": "".join(c["char"] for c in chars), "chars": chars, "is_vertical": True}
+
+
+def _jp_conf(lines: list[dict]) -> float:
+    """Mean recognizer confidence on the Japanese chars of a pass. Sideways text reads as low-confidence junk."""
+    cs = [c["conf"] for l in lines for c in l["chars"] if JP.match(c["char"])]
+    return sum(cs) / len(cs) if len(cs) >= 3 else 0.0  # 1-2 chars: too little to judge (junk like 万工)
+
+
+def _ocr_pass(img) -> tuple[list[list[dict]], float]:
+    """One OCR pass: lines as lists of {"char", "conf", ...}, plus the mean confidence on Japanese."""
     h, w = img.shape[:2]
     boxes = ocr.run_detection(img, DET_THRESHOLD)
     boxes = [b for b in boxes if not _is_slice(b, boxes)]
+    # tall boxes are vertical columns (tategaki), read right to left
+    is_col = lambda b: b["bbox"][3] - b["bbox"][1] > 1.5 * (b["bbox"][2] - b["bbox"][0])
+    cols = sorted((b for b in boxes if is_col(b)), key=lambda b: -b["bbox"][2])
+    vlines = [r for r in (_read_vertical(img, b) for b in cols) if r["chars"]]
+    boxes = [b for b in boxes if not is_col(b)]
     padded = []
     for b in boxes:
         x1, y1, x2, y2 = b["bbox"]
         p = int(round((y2 - y1) * BOX_PAD))  # pad both ways so a square kanji box stays horizontal
         padded.append({**b, "bbox": [max(0, x1 - p), max(0, y1 - p), min(w, x2 + p), min(h, y2 + p)]})
     # read every box tight and padded, keep whichever the recognizer is more confident about
-    best = [_pick(a, b) for a, b in zip(_ocr_boxes(img, boxes), _ocr_boxes(img, padded))]
-    texts = [fix_lookalikes(t) for l in best for t in _split_gaps(l)]
+    best = [_pick(a, b) for a, b in zip(_ocr_boxes(img, boxes), _ocr_boxes(img, padded))] if boxes else []
+    segs = [s for l in best for s in _split_gaps(l)] + [l["chars"] for l in vlines]
+    return segs, _jp_conf(best + vlines)
+
+
+def _oriented_pass(img) -> list[list[dict]]:
+    """OCR, also trying the image turned 90/270/180 degrees: a phone held sideways (rotation lock on)
+    sends the text sideways. Keep the orientation the recognizer is most confident about."""
+    segs, conf = _ocr_pass(img)
+    if conf >= UPRIGHT_CONF:  # upright already (every normal photo): no extra passes
+        return segs
+    best, best_conf = segs, max(conf, ROTATED_MIN_CONF)
+    for rot in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE, cv2.ROTATE_180):
+        s, c = _ocr_pass(cv2.rotate(img, rot))
+        if c > best_conf:
+            best, best_conf = s, c
+            if c >= UPRIGHT_CONF:
+                break
+    return best
+
+
+def _junk_line(seg: list[dict]) -> bool:
+    """Lines read from a texture or pattern rather than text."""
+    text = "".join(c["char"] for c in seg)
+    n = len(text)
+    if text == "一" and seg[0]["conf"] < LONE_STROKE_CONF:  # an underline / arrow / pencil stroke
+        return True
+    if n >= 5 and len(set(text)) / n <= 0.35:  # repeating pattern: 通の通の通の... (seigaiha waves)
+        return True
+    if n >= 6 and Counter(text).most_common(1)[0][1] / n >= 0.4:  # one char dominates: の浜の混の混の...
+        return True
+    return n >= 2 and sum(c["conf"] for c in seg) / n < JUNK_LINE_CONF  # unsure about the whole line
+
+
+def _keep(c: dict, seg: list[dict]) -> bool:
+    if not KANJI.match(c["char"]) or c["conf"] >= KANJI_MIN_CONF:
+        return True
+    rest = [o["conf"] for o in seg if o is not c]
+    return bool(rest) and sum(rest) / len(rest) >= KANJI_CTX_CONF
+
+
+def ocr_lines(img) -> list[str]:
+    texts = []
+    for seg in _oriented_pass(img):
+        if _junk_line(seg):
+            continue
+        # drop an unsure kanji and break the line there, so its neighbours don't glue into a fake word
+        text = "".join(c["char"] if _keep(c, seg) else " " for c in seg)
+        texts += [fix_lookalikes(t) for t in text.split() if t]
     # the lower threshold yields overlapping boxes ("焼き魚定食" inside "焼き魚定食八百円"): keep the longer
     return [t for t in dict.fromkeys(texts) if not any(t != u and t in u for u in texts)]
 # KANJIDIC2 uses the old 4-level JLPT scale; map roughly to N-levels

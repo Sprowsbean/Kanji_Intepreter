@@ -2,9 +2,13 @@ import type { KanjiCard } from '../types/kanji';
 
 interface KanjiFlashcardProps {
   card: KanjiCard;
+  selected?: string | null;
+  onPickKanji?: (ch: string) => void;
 }
 
-export function KanjiFlashcard({ card }: KanjiFlashcardProps) {
+const isKanji = (ch: string) => /[一-鿿々]/.test(ch);
+
+export function KanjiFlashcard({ card, selected, onPickKanji }: KanjiFlashcardProps) {
   const getLevelColor = (level: string) => {
     const levelColors: Record<string, string> = {
       'N5': 'bg-green-100 text-green-800',
@@ -19,7 +23,25 @@ export function KanjiFlashcard({ card }: KanjiFlashcardProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow">
       <div className="flex items-start justify-between mb-4">
-        <div className="text-6xl font-light text-gray-900">{card.kanji}</div>
+        <div className="text-6xl font-light text-gray-900">
+          {/* tap a kanji to see every word that uses it */}
+          {[...card.kanji].map((ch, i) =>
+            isKanji(ch) && onPickKanji ? (
+              <button
+                key={i}
+                onClick={() => onPickKanji(ch)}
+                className={`rounded-md transition-colors ${
+                  ch === selected ? 'bg-yellow-200' : 'hover:bg-gray-100'
+                }`}
+                title={`Words with ${ch}`}
+              >
+                {ch}
+              </button>
+            ) : (
+              <span key={i}>{ch}</span>
+            )
+          )}
+        </div>
         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getLevelColor(card.level)}`}>
           {card.level}
         </span>

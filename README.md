@@ -55,9 +55,37 @@ proxies `/analyze` to the backend on the PC. If the phone can't connect, allow N
 
 ## Deploy (free)
 
-- Backend: Hugging Face Space, SDK = Docker, CPU basic. Upload `backend/` contents except `venv/` (Dockerfile exposes 7860). Dockerfile is untested.
-- Frontend: Vercel, set env `VITE_API_URL` to the Space URL (`https://<user>-<space>.hf.space`).
-- CORS is currently `*` in `main.py`; restrict to the Vercel domain if desired.
+The backend needs about **1 GB of RAM** once loaded (OCR models + Sudachi + JMdict) and a few seconds of CPU per
+photo, so where you host it matters:
+
+| Part | Free host | Why |
+|---|---|---|
+| Backend | **Hugging Face Space** (SDK = Docker, CPU basic: 2 vCPU, 16 GB RAM) | Fits easily. Upload `backend/` except `venv/` and `.cache/`; the Dockerfile exposes 7860. Dockerfile is untested. |
+| Frontend | **Render Static Site**, Vercel or Netlify | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
+
+- **Not Render's free web service for the backend:** it has 512 MB RAM (the backend needs ~1 GB) and 0.1 CPU
+  (a 2-6 s scan would take about a minute).
+- A free Space goes to sleep when nobody uses it for a while; the first scan after that waits for it to wake up
+  and load the models.
+- CORS is currently `*` in `main.py`; restrict it to the frontend's domain if desired.
+
+## Limitations (what to expect from the demo)
+
+This app runs a small, free OCR model (about 44 MB, CPU only), not a large AI model like Gemini or GPT. Printed
+Japanese works well; these do not, or not reliably:
+
+- **Handwriting**, including handwritten Japanese notes on a page. Handwritten kanji may be missed, or read as
+  real text and turned into cards.
+- **Decorative fonts:** heavy brush calligraphy, manga lettering, logos. Simple brush fonts mostly work.
+- **Text on very busy patterns.** Text on a dense repeating background may not be found at all.
+- **Furigana** (small readings above/beside kanji) is not handled specially and can end up as separate text.
+- **No context correction.** Each character is read on its own; a large AI model would fix 先土 to 先生 from
+  context, this app cannot.
+- **Speed:** a photo takes ~0.5-3 s on a laptop CPU. A photo taken sideways or upside down takes up to 4x longer,
+  because the app retries it at each rotation.
+- **Readings and meanings** come from dictionaries (JMdict/KANJIDIC2), so they are real dictionary entries, but the
+  word chosen for a kanji can be the wrong one when a word has several readings. The JLPT level is approximate.
+- Tested mostly on computer-generated test images (see below); real-world photos vary more.
 
 ## What was tested vs not
 
@@ -66,11 +94,21 @@ proxies `/analyze` to the backend on the PC. If the phone can't connect, allow N
   (signs, sentences, menu; gothic + mincho fonts; "phone-like" versions with perspective, blur, noise, JPEG;
   12MP frames with small text; EXIF-rotated JPEG). Horizontal text: all correct, ~0.6-2s per image.
   Blank / English-only images -> 404, non-image -> 400. `run_ocr` returns `[{"text", "chars", "is_vertical"}]`.
-- Weak: vertical (tategaki) text was garbled on a synthetic test image; one misread (出->H) on a 12MP frame.
+- TESTED (2026-10-22) on locally generated test images (not included in the repo):
+  - Screenshots of a JLPT kanji table and a brush-font kanji poster: all kanji found (big standalone kanji,
+    katakana/kanji lookalikes like カ/力, items far apart on one row).
+  - Vertical text (24 images: book pages, sentences, small kana; 2 fonts; clean + phone-like): 168/168 kanji words
+    found. Vertical columns are cut into characters and read as a horizontal line (the vertical model was weak).
+  - Rotated photos: every test image turned 90/180/270 degrees gives the same words as upright (72/72).
+  - Fake kanji (108 images incl. 20 real photos with no Japanese, textures, English signs): fake cards cut from
+    35 to 5 with no real words lost. Textbook pages with pencil/pen marks, highlighter, margin notes (18 images):
+    0 fake cards, 0/204 words missed.
 - TESTED (2026-10-21): frontend typecheck, lint, build; upload flow in desktop Chrome (cards + "no kanji" error).
   Fixed: blank page in dev when an ad blocker blocks lucide-react's `icons/fingerprint.js`; camera never
   stopped (stale `stream` in cleanup); camera now asks for 1080p instead of the 640x480 default.
-- NOT TESTED: real phone photos / phone camera, the Dockerfile (Docker Desktop on the dev PC had corrupted storage).
+- Phone camera: used on a real phone over Wi-Fi (`npm run dev:phone`); photos taken sideways failed, fixed by the
+  rotation retry above.
+- NOT TESTED: the Dockerfile (Docker Desktop on the dev PC had corrupted storage), hosting on a free Space.
   Dockerfile now runs as uid 1000 with HF_HOME in the user's home (HF Spaces requirement).
 
 ## Known issues / TODO for Claude Code
@@ -80,7 +118,10 @@ proxies `/analyze` to the backend on the PC. If the phone can't connect, allow N
    from JMdict are explained from sub-words (東京駅 = 東京 (Tokyo) + 駅 (station)). Still to do: try real phone photos.
 2. `level` is approximate: KANJIDIC2 only has the old 4-level JLPT scale, mapped to ranges like "N5-N4". Better: add an open JLPT word list (N5-N1) and look up by word.
 3. Romaji uses Hepburn without macrons (`toukyou`). Optionally convert to `tōkyō`.
-4. Phone photos are the weak point of meikiocr (trained on game text). If it fails, add PaddleOCR (PP-OCRv5 Japanese) as a fallback and pick the result with higher confidence. Resize images client-side (~1280px) before upload.
+4. Better accuracy (handwriting, decorative fonts), if needed: (a) an optional "accurate mode" with a small
+   vision-language model (e.g. PaddleOCR-VL ~0.9B or Qwen-VL 2-3B) on a GPU; too slow on a free CPU host;
+   (b) an optional Gemini API key on the server, used for OCR only, with the local OCR as fallback (photos then
+   go to Google). Resize images client-side (~1280px) before upload to speed up the free host.
 5. Frontend polish ideas: draw boxes over detected text, tap a word to open its card, furigana toggle, save cards to a deck / export to Anki.
 6. ~~Rename `gemini.ts` to `api.ts`, remove `@google/generative-ai`~~ done (also removed unused `@supabase/supabase-js`).
 7. Rare words and names: jamdict-data may include JMnedict; `make_card` currently uses only entries, not `result.names`.
