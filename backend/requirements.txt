@@ -1,0 +1,12 @@
+# Versions tested end to end on 2026-10-21 (Python 3.11)
+meikiocr==0.3.5
+opencv-python-headless==5.0.0.93
+numpy==2.4.6
+pykakasi==2.3.0
+jamdict==0.1a11.post2
+jamdict-data==1.5
+fastapi==0.156.8
+uvicorn==0.54.0
+python-multipart==0.0.32
+sudachipy==0.7.0
+sudachidict_core==20261015
