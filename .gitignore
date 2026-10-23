@@ -26,3 +26,4 @@ dist-ssr
 venv/
 __pycache__/
 .cache/
+venv-paddle/
