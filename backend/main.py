@@ -54,6 +54,7 @@ KANJI_MIN_CONF = 0.4     # a kanji below this is dropped...
 KANJI_CTX_CONF = 0.8     # ...unless the rest of its line averages at least this
 JUNK_LINE_CONF = 0.5     # a line averaging below this is junk
 LONE_STROKE_CONF = 0.7   # a lone 一 needs this: pencil underlines/arrows read as 一 at 0.44-0.57, a real one 0.88
+LATIN_JUNK_CONF = 0.9    # a single kanji among Latin/symbols (Q*A力) needs this to count as text
 
 
 def fix_lookalikes(line: str) -> str:
@@ -91,6 +92,15 @@ def _pick(a: dict, b: dict) -> dict:
     ta, tb = a["text"].strip(), b["text"].strip()
     if len(ta) == len(tb) == 1 and ta != tb and ta.translate(LOOKALIKE) == tb.translate(LOOKALIKE):
         return a if KANJI.match(ta) else b
+    pairs = list(zip(a["chars"], b["chars"]))
+    if len(a["chars"]) == len(b["chars"]) >= 3 and ta != tb \
+            and sum(ca["char"] == cb["char"] for ca, cb in pairs) * 2 >= len(pairs):
+        # Real text read twice mostly agrees: take each differing character from the more confident
+        # reading. A heavy bold 更 read as 史 (0.18) tight and correctly (0.50) padded, while 夜 is only
+        # right tight: 夜史かし + 変更かし -> 夜更かし. Junk (pencil marks, patterns) reads differently
+        # each time; mixing it would only make the junk look confident, so it keeps the rule below.
+        chars = [ca if ca["conf"] >= cb["conf"] else cb for ca, cb in pairs]
+        return {**a, "chars": chars, "text": "".join(c["char"] for c in chars)}
     return a if _conf(a) >= _conf(b) else b
 
 
@@ -230,6 +240,12 @@ def _junk_line(seg: list[dict]) -> bool:
     n = len(text)
     if text == "一" and seg[0]["conf"] < LONE_STROKE_CONF:  # an underline / arrow / pencil stroke
         return True
+    jp = [c for c in seg if JP.match(c["char"])]
+    others = [c for c in seg if not JP.match(c["char"]) and c["char"] not in SKIP]
+    # one unsure kanji amid Latin letters/symbols: an icon or logo read as text (Q*A力, Q會); real mixed
+    # text such as JLPT先生 has more Japanese, and a clearly printed Tokyo駅 is read confidently
+    if len(jp) == 1 and others and KANJI.match(jp[0]["char"]) and jp[0]["conf"] < LATIN_JUNK_CONF:
+        return True
     if n >= 5 and len(set(text)) / n <= 0.35:  # repeating pattern: 通の通の通の... (seigaiha waves)
         return True
     if n >= 6 and Counter(text).most_common(1)[0][1] / n >= 0.4:  # one char dominates: の浜の混の混の...
@@ -334,7 +350,31 @@ async def analyze(file: UploadFile = File(...)):
     img = cv2.imdecode(np.frombuffer(await file.read(), np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(400, "Not a valid image")
-    lines = ocr_lines(img)
+    result = analyze_image(img)
+    if not result["cards"]:
+        raise HTTPException(404, "No Kanji found in the image")
+    return result
+
+
+HIRA = re.compile(r"[ぁ-ゖ]")
+SENTENCE_END = tuple("。！？!?」』）)")
+
+
+def join_wrapped(lines: list[str]) -> list[str]:
+    """Rejoin a sentence wrapped mid-word (最近の子供たちは夜更 / かしです。 -> ...夜更かしです。).
+    A line that starts with hiragana continues the previous one: a new item or sentence almost never does."""
+    out: list[str] = []
+    for line in lines:
+        if out and HIRA.match(line) and not out[-1].endswith(SENTENCE_END):
+            out[-1] += line
+        else:
+            out.append(line)
+    return out
+
+
+def analyze_image(img) -> dict:
+    """BGR image -> {"text": OCR text, "cards": [KanjiCard, ...]} (cards may be empty)."""
+    lines = join_wrapped(ocr_lines(img))
     text = "\n".join(lines)
     cards, seen = [], set()
     for line in lines:  # per line, so a word never spans a line break and we know its line
@@ -345,6 +385,4 @@ async def analyze(file: UploadFile = File(...)):
                 if card["kanji"] not in seen:  # 食べた and 食べる share one card
                     seen.add(card["kanji"])
                     cards.append(card)
-    if not cards:
-        raise HTTPException(404, "No Kanji found in the image")
     return {"text": text, "cards": cards}

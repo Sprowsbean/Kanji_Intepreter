@@ -1,0 +1,11 @@
+# Uploaded to the Hugging Face Space as requirements.txt (see deploy_space.py).
+# Same as requirements.txt, minus fastapi / uvicorn / python-multipart / numpy pins: the Space installs
+# Gradio, which brings its own compatible versions of those.
+meikiocr==0.3.5
+opencv-python-headless==5.0.0.93
+numpy
+pykakasi==2.3.0
+jamdict==0.1a11.post2
+jamdict-data==1.5
+sudachipy==0.7.0
+sudachidict_core==20261015
