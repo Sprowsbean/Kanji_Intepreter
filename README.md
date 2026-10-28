@@ -63,6 +63,14 @@ photo, so where you host it matters:
 | Backend | **Hugging Face Space** (SDK = Docker, CPU basic: 2 vCPU, 16 GB RAM) | Fits easily. Upload `backend/` except `venv/` and `.cache/`; the Dockerfile exposes 7860. Dockerfile is untested. |
 | Frontend | **Render Static Site**, Vercel or Netlify | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
 
+Steps:
+1. Backend: `hf auth login` (a *write* token from huggingface.co/settings/tokens), then from `backend/`:
+   `venv\Scripts\python deploy_space.py`. It creates a public Docker Space and uploads only `Dockerfile`,
+   `.dockerignore`, `main.py`, `requirements.txt`. Wait for the build, then open
+   `https://<user>-kanji-interpreter.hf.space/docs` to check it is up.
+2. Frontend: Render dashboard -> New -> Blueprint -> this repo (uses `render.yaml`); enter `VITE_API_URL` =
+   the Space URL from step 1. Render redeploys on every push to the chosen branch.
+
 - **Not Render's free web service for the backend:** it has 512 MB RAM (the backend needs ~1 GB) and 0.1 CPU
   (a 2-6 s scan would take about a minute).
 - A free Space goes to sleep when nobody uses it for a while; the first scan after that waits for it to wake up

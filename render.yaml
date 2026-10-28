@@ -1,0 +1,11 @@
+# Render Blueprint for the frontend (free static site). Render dashboard -> New -> Blueprint -> pick this repo.
+# The backend runs on a Hugging Face Space (see README "Deploy"); Render's free web service is too small for it.
+services:
+  - type: web
+    name: kanji-interpreter
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL  # e.g. https://<hf-username>-kanji-interpreter.hf.space ; Render asks for it on setup
+        sync: false
