@@ -334,6 +334,14 @@ async def analyze(file: UploadFile = File(...)):
     img = cv2.imdecode(np.frombuffer(await file.read(), np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(400, "Not a valid image")
+    result = analyze_image(img)
+    if not result["cards"]:
+        raise HTTPException(404, "No Kanji found in the image")
+    return result
+
+
+def analyze_image(img) -> dict:
+    """BGR image -> {"text": OCR text, "cards": [KanjiCard, ...]} (cards may be empty)."""
     lines = ocr_lines(img)
     text = "\n".join(lines)
     cards, seen = [], set()
@@ -345,6 +353,4 @@ async def analyze(file: UploadFile = File(...)):
                 if card["kanji"] not in seen:  # 食べた and 食べる share one card
                     seen.add(card["kanji"])
                     cards.append(card)
-    if not cards:
-        raise HTTPException(404, "No Kanji found in the image")
     return {"text": text, "cards": cards}

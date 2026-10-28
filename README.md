@@ -60,14 +60,14 @@ photo, so where you host it matters:
 
 | Part | Free host | Why |
 |---|---|---|
-| Backend | **Hugging Face Space** (SDK = Docker, CPU basic: 2 vCPU, 16 GB RAM) | Fits easily. Upload `backend/` except `venv/` and `.cache/`; the Dockerfile exposes 7860. Dockerfile is untested. |
+| Backend | **Hugging Face Space** (SDK = **Gradio**; hardware CPU basic or the free ZeroGPU, which runs on a CPU machine too) | Fits easily. `deploy_space.py` uploads `app.py` (serves the FastAPI backend + a Gradio test page), `main.py` and `requirements-space.txt`. Docker Spaces are now paid; `Dockerfile` is kept for other hosts (untested). |
 | Frontend | **Render Static Site**, Vercel or Netlify | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
 
 Steps:
 1. Backend: `hf auth login` (a *write* token from huggingface.co/settings/tokens), then from `backend/`:
-   `venv\Scripts\python deploy_space.py`. It creates a public Docker Space and uploads only `Dockerfile`,
-   `.dockerignore`, `main.py`, `requirements.txt`. Wait for the build, then open
-   `https://<user>-kanji-interpreter.hf.space/docs` to check it is up.
+   `venv\Scripts\python deploy_space.py [space-name]`. It creates (or updates) a public Gradio Space and uploads
+   only `app.py`, `main.py` and `requirements-space.txt`. Wait for the build, then open
+   `https://<user>-<space-name>.hf.space` (test page) or `/docs` (API) to check it is up.
 2. Frontend: Render dashboard -> New -> Blueprint -> this repo (uses `render.yaml`); enter `VITE_API_URL` =
    the Space URL from step 1. Render redeploys on every push to the chosen branch.
 
