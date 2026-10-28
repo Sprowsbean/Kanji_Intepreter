@@ -91,6 +91,15 @@ def _pick(a: dict, b: dict) -> dict:
     ta, tb = a["text"].strip(), b["text"].strip()
     if len(ta) == len(tb) == 1 and ta != tb and ta.translate(LOOKALIKE) == tb.translate(LOOKALIKE):
         return a if KANJI.match(ta) else b
+    pairs = list(zip(a["chars"], b["chars"]))
+    if len(a["chars"]) == len(b["chars"]) >= 3 and ta != tb \
+            and sum(ca["char"] == cb["char"] for ca, cb in pairs) * 2 >= len(pairs):
+        # Real text read twice mostly agrees: take each differing character from the more confident
+        # reading. A heavy bold 更 read as 史 (0.18) tight and correctly (0.50) padded, while 夜 is only
+        # right tight: 夜史かし + 変更かし -> 夜更かし. Junk (pencil marks, patterns) reads differently
+        # each time; mixing it would only make the junk look confident, so it keeps the rule below.
+        chars = [ca if ca["conf"] >= cb["conf"] else cb for ca, cb in pairs]
+        return {**a, "chars": chars, "text": "".join(c["char"] for c in chars)}
     return a if _conf(a) >= _conf(b) else b
 
 
@@ -340,9 +349,25 @@ async def analyze(file: UploadFile = File(...)):
     return result
 
 
+HIRA = re.compile(r"[ぁ-ゖ]")
+SENTENCE_END = tuple("。！？!?」』）)")
+
+
+def join_wrapped(lines: list[str]) -> list[str]:
+    """Rejoin a sentence wrapped mid-word (最近の子供たちは夜更 / かしです。 -> ...夜更かしです。).
+    A line that starts with hiragana continues the previous one: a new item or sentence almost never does."""
+    out: list[str] = []
+    for line in lines:
+        if out and HIRA.match(line) and not out[-1].endswith(SENTENCE_END):
+            out[-1] += line
+        else:
+            out.append(line)
+    return out
+
+
 def analyze_image(img) -> dict:
     """BGR image -> {"text": OCR text, "cards": [KanjiCard, ...]} (cards may be empty)."""
-    lines = ocr_lines(img)
+    lines = join_wrapped(ocr_lines(img))
     text = "\n".join(lines)
     cards, seen = [], set()
     for line in lines:  # per line, so a word never spans a line break and we know its line
