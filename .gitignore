@@ -21,3 +21,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Python backend
+venv/
+__pycache__/
+.cache/
+venv-paddle/
