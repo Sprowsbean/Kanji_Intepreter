@@ -1,5 +1,7 @@
 # Kanji Interpreter (open-source, no API)
 
+**Live demo:** https://kanji-intepreter.onrender.com (backend: https://okutsu1-kanji-ocr.hf.space; it sleeps when unused, so the first scan can take a minute)
+
 Point a phone camera (or upload a photo) at Japanese text. The app finds the kanji words and shows, for each one:
 **hiragana, katakana, romaji, English meaning, on'yomi/kun'yomi, approximate JLPT level.**
 
@@ -61,7 +63,7 @@ photo, so where you host it matters:
 | Part | Free host | Why |
 |---|---|---|
 | Backend | **Hugging Face Space** (SDK = **Gradio**; hardware CPU basic or the free ZeroGPU, which runs on a CPU machine too) | Fits easily. `deploy_space.py` uploads `app.py` (serves the FastAPI backend + a Gradio test page), `main.py` and `requirements-space.txt`. Docker Spaces are now paid; `Dockerfile` is kept for other hosts (untested). |
-| Frontend | **Render Static Site**, Vercel or Netlify | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
+| Frontend | **Render Static Site** (live: https://kanji-intepreter.onrender.com) | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
 
 Steps:
 1. Backend: `hf auth login` (a *write* token from huggingface.co/settings/tokens), then from `backend/`:
