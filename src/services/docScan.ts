@@ -1,5 +1,5 @@
-// Document-scanner helpers (like the iPhone Notes scanner), all in the browser, no libraries:
-// find the page/screen in a frame, then cut it out and straighten it before OCR.
+// Document-scanner helper (like the iPhone Notes scanner), in the browser, no libraries:
+// find the page/screen in a frame, so the camera can outline it and the crop box can start around it.
 
 export interface Point { x: number; y: number }
 /** corners as fractions of the image (0..1), clockwise from top-left */
@@ -8,7 +8,6 @@ export type Quad = [Point, Point, Point, Point];
 export const DEFAULT_QUAD: Quad = [
   { x: 0.06, y: 0.12 }, { x: 0.94, y: 0.12 }, { x: 0.94, y: 0.88 }, { x: 0.06, y: 0.88 },
 ];
-export const FULL_QUAD: Quad = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 const DETECT_WIDTH = 200; // detection works on a tiny copy: fast enough to run live on a phone
 
@@ -149,76 +148,4 @@ export function detectQuadPixels(data: Uint8ClampedArray, w: number, h: number):
   const quad = regionCorners(region, w, h);
   const fill = region.length / Math.max(1, polygonArea(quad.map((p) => ({ x: p.x * (w - 1), y: p.y * (h - 1) }))));
   return fill >= FILL[0] && fill <= FILL[1] ? quad : null;
-}
-
-/** Solve the 3x3 homography (8 unknowns) mapping the output rectangle onto the source quad. */
-function homography(dst: Point[], src: Point[]): number[] {
-  const A: number[][] = [];
-  for (let i = 0; i < 4; i++) {
-    const { x: u, y: v } = dst[i], { x, y } = src[i];
-    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x, x]);
-    A.push([0, 0, 0, u, v, 1, -u * y, -v * y, y]);
-  }
-  for (let c = 0; c < 8; c++) { // Gaussian elimination with partial pivoting
-    let piv = c;
-    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
-    [A[c], A[piv]] = [A[piv], A[c]];
-    for (let r = 0; r < 8; r++) {
-      if (r === c) continue;
-      const f = A[r][c] / A[c][c];
-      for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k];
-    }
-  }
-  return A.map((row, i) => row[8] / row[i]);
-}
-
-/** Cut out the quad and straighten it into a flat rectangle (perspective correction). */
-export function warpQuad(img: HTMLImageElement, quad: Quad, maxSide = 2400): HTMLCanvasElement {
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-  const srcCanvas = document.createElement('canvas');
-  srcCanvas.width = iw;
-  srcCanvas.height = ih;
-  const sctx = srcCanvas.getContext('2d')!;
-  sctx.drawImage(img, 0, 0);
-  const { data, w, h } = warpPixels(sctx.getImageData(0, 0, iw, ih).data, iw, ih, quad, maxSide);
-  const out = document.createElement('canvas');
-  out.width = w;
-  out.height = h;
-  out.getContext('2d')!.putImageData(new ImageData(data, w, h), 0, 0);
-  return out;
-}
-
-/** warpQuad on raw RGBA pixels; no DOM, so it can be tested. */
-export function warpPixels(src: Uint8ClampedArray, iw: number, ih: number, quad: Quad, maxSide = 2400) {
-  const P = quad.map((p) => ({ x: p.x * iw, y: p.y * ih }));
-  const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
-  let ow = Math.max(dist(P[0], P[1]), dist(P[3], P[2]));
-  let oh = Math.max(dist(P[0], P[3]), dist(P[1], P[2]));
-  const scale = Math.min(1, maxSide / Math.max(ow, oh));
-  ow = Math.max(1, Math.round(ow * scale));
-  oh = Math.max(1, Math.round(oh * scale));
-  const data = new Uint8ClampedArray(ow * oh * 4);
-  const H = homography([{ x: 0, y: 0 }, { x: ow, y: 0 }, { x: ow, y: oh }, { x: 0, y: oh }], P);
-  for (let v = 0; v < oh; v++) {
-    for (let u = 0; u < ow; u++) {
-      const z = H[6] * u + H[7] * v + 1;
-      const x = (H[0] * u + H[1] * v + H[2]) / z;
-      const y = (H[3] * u + H[4] * v + H[5]) / z;
-      const x0 = Math.min(iw - 2, Math.max(0, Math.floor(x))), y0 = Math.min(ih - 2, Math.max(0, Math.floor(y)));
-      const fx = Math.min(1, Math.max(0, x - x0)), fy = Math.min(1, Math.max(0, y - y0));
-      const i00 = (y0 * iw + x0) * 4, i10 = i00 + 4, i01 = i00 + iw * 4, i11 = i01 + 4;
-      const o = (v * ow + u) * 4;
-      for (let k = 0; k < 3; k++) { // bilinear: smooth, keeps thin strokes readable
-        data[o + k] = (src[i00 + k] * (1 - fx) + src[i10 + k] * fx) * (1 - fy)
-                    + (src[i01 + k] * (1 - fx) + src[i11 + k] * fx) * fy;
-      }
-      data[o + 3] = 255;
-    }
-  }
-  return { data, w: ow, h: oh };
-}
-
-/** True when the quad is (close to) the whole image: nothing to straighten. */
-export function isFullQuad(q: Quad): boolean {
-  return q.every((p, i) => Math.abs(p.x - FULL_QUAD[i].x) < 0.005 && Math.abs(p.y - FULL_QUAD[i].y) < 0.005);
 }
