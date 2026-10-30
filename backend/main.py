@@ -170,7 +170,8 @@ def _read_vertical(img, box) -> dict:
     x1, y1, x2, y2 = [int(v) for v in box["bbox"]]
     p = (x2 - x1) // 6
     col = img[max(0, y1 - p):min(h, y2 + p), max(0, x1 - p):min(w, x2 + p)]
-    cells = _grid_cells(col, x2 - x1)
+    # a box at the very edge of the image can crop to nothing; that used to crash the request (HTTP 500)
+    cells = _grid_cells(col, x2 - x1) if col.size and x2 > x1 else []
     if not cells:
         return {"text": "", "chars": [], "is_vertical": True}
     cw = col.shape[1]

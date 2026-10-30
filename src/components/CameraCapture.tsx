@@ -1,28 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Circle } from 'lucide-react';
-import { DEFAULT_QUAD, detectQuad } from '../services/docScan';
-import type { Quad } from '../services/docScan';
+import { findDocument, findTextBox } from '../services/scanner';
+import type { Box, CornerPoints } from '../services/scanner';
+
+/** what the live detection saw when the photo was taken (both in the photo's own coordinates) */
+export interface Found {
+  /** a page/document's corners in pixels (scanic ML detector), or null */
+  doc: CornerPoints | null;
+  /** the text near the centre, as fractions of the photo (OCR text detector), or null */
+  text: Box | null;
+}
 
 interface CameraCaptureProps {
-  /** quad: the page/screen corners found when the photo was taken (null = none found) */
-  onCapture: (file: File, quad: Quad | null) => void;
+  onCapture: (file: File, found: Found) => void;
   onClose: () => void;
 }
 
-const DETECT_EVERY_MS = 200; // ~5 checks a second: each takes a few ms on a PC, a few times more on a phone
-const SMOOTH = 0.5;      // blend new corners with the previous ones so the border doesn't jitter
-const LOST_AFTER = 4;    // frames without a page before the border falls back to the guide frame
+const DOC_EVERY_MS = 250;   // scanic's ML detector: ~20 ms per frame on a PC
+const TEXT_EVERY_MS = 900;  // the text detector is heavier (~0.4 s on a PC), so less often
+const LOST_AFTER = 3;       // misses in a row before a shown border disappears (stops flicker)
+const GUIDE: Box = { x: 0.08, y: 0.25, w: 0.84, h: 0.5 }; // shown when nothing is found yet
 
 export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // a ref, not state: the unmount cleanup must see the stream that was opened after mount
   const streamRef = useRef<MediaStream | null>(null);
-  const quadRef = useRef<Quad | null>(null);
-  const [quad, setQuad] = useState<Quad | null>(null);
+  const foundRef = useRef<Found>({ doc: null, text: null });
+  const [found, setFound] = useState<Found>({ doc: null, text: null });
   const [error, setError] = useState<string>('');
   // where the video frame actually sits on screen (object-cover crops it), to draw the border on top
-  const [view, setView] = useState({ ox: 0, oy: 0, w: 1, h: 1 });
+  const [view, setView] = useState({ ox: 0, oy: 0, w: 1, h: 1, vw: 1, vh: 1 });
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -62,32 +70,42 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     };
   }, []);
 
-  // live page detection, like a document scanner: find the page/screen and draw its border
+  // live detection, like the iPhone scanner: a page gets its outline; otherwise the text near the centre
+  // gets a box. Each detector runs only when its previous run has finished, so a slow phone never piles up.
   useEffect(() => {
-    let lost = 0;
-    const timer = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || !video.videoWidth) return;
-      const r = video.getBoundingClientRect();
-      const scale = Math.max(r.width / video.videoWidth, r.height / video.videoHeight);
-      const w = video.videoWidth * scale, h = video.videoHeight * scale;
-      setView({ ox: (r.width - w) / 2, oy: (r.height - h) / 2, w, h });
-
-      const found = detectQuad(video, video.videoWidth, video.videoHeight);
-      if (found) {
-        lost = 0;
-        const prev = quadRef.current;
-        const next = (prev
-          ? found.map((p, i) => ({ x: prev[i].x + (p.x - prev[i].x) * SMOOTH, y: prev[i].y + (p.y - prev[i].y) * SMOOTH }))
-          : found) as Quad;
-        quadRef.current = next;
-        setQuad(next);
-      } else if (++lost >= LOST_AFTER) {
-        quadRef.current = null;
-        setQuad(null);
-      }
-    }, DETECT_EVERY_MS);
-    return () => clearInterval(timer);
+    let stopped = false, docMiss = 0, textMiss = 0, docBusy = false, textBusy = false;
+    const update = (next: Partial<Found>) => {
+      foundRef.current = { ...foundRef.current, ...next };
+      setFound(foundRef.current);
+    };
+    const ready = () => {
+      const v = videoRef.current;
+      if (!v || !v.videoWidth) return null;
+      const r = v.getBoundingClientRect();
+      const scale = Math.max(r.width / v.videoWidth, r.height / v.videoHeight);
+      const w = v.videoWidth * scale, h = v.videoHeight * scale;
+      setView({ ox: (r.width - w) / 2, oy: (r.height - h) / 2, w, h, vw: v.videoWidth, vh: v.videoHeight });
+      return v;
+    };
+    const docTimer = setInterval(async () => {
+      const v = ready();
+      if (!v || docBusy) return;
+      docBusy = true;
+      const doc = await findDocument(v);
+      docBusy = false;
+      if (stopped) return;
+      if (doc) { docMiss = 0; update({ doc }); } else if (++docMiss >= LOST_AFTER) update({ doc: null });
+    }, DOC_EVERY_MS);
+    const textTimer = setInterval(async () => {
+      const v = ready();
+      if (!v || textBusy || foundRef.current.doc) return; // a page outline wins; no need for the text box
+      textBusy = true;
+      const text = await findTextBox(v, v.videoWidth, v.videoHeight);
+      textBusy = false;
+      if (stopped) return;
+      if (text) { textMiss = 0; update({ text }); } else if (++textMiss >= LOST_AFTER) update({ text: null });
+    }, TEXT_EVERY_MS);
+    return () => { stopped = true; clearInterval(docTimer); clearInterval(textTimer); };
   }, []);
 
   const capturePhoto = () => {
@@ -102,13 +120,13 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0);
-    const corners = quadRef.current;
+    const seen = foundRef.current;
 
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
         stopCamera();
-        onCapture(file, corners);
+        onCapture(file, seen);
       }
     }, 'image/jpeg', 0.95);
   };
@@ -118,9 +136,16 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     onClose();
   };
 
-  // border in screen pixels: the detected page, or the guide frame when nothing is found
-  const shown = quad ?? DEFAULT_QUAD;
-  const pts = shown.map((p) => `${view.ox + p.x * view.w},${view.oy + p.y * view.h}`).join(' ');
+  // overlay in screen pixels
+  const px = (x: number, y: number) => `${view.ox + (x / view.vw) * view.w},${view.oy + (y / view.vh) * view.h}`;
+  const fr = (b: Box) => [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]]
+    .map(([x, y]) => `${view.ox + x * view.w},${view.oy + y * view.h}`).join(' ');
+  const d = found.doc;
+  const pts = d ? [d.topLeft, d.topRight, d.bottomRight, d.bottomLeft].map((p) => px(p.x, p.y)).join(' ')
+                : fr(found.text ?? GUIDE);
+  const hint = d ? 'Page found: hold still and tap the button'
+             : found.text ? 'Text found: tap the button, you can adjust the box next'
+             : 'Center the text you want to scan';
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -140,17 +165,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             <svg className="absolute inset-0 w-full h-full pointer-events-none">
               <polygon
                 points={pts}
-                fill={quad ? 'rgba(244,114,182,0.15)' : 'none'}
-                stroke={quad ? '#f472b6' : 'rgba(255,255,255,0.8)'}
+                fill={d || found.text ? 'rgba(250,204,21,0.18)' : 'none'}
+                stroke={d || found.text ? '#facc15' : 'rgba(255,255,255,0.8)'}
                 strokeWidth={3}
-                strokeDasharray={quad ? undefined : '10 8'}
+                strokeDasharray={d || found.text ? undefined : '10 8'}
                 strokeLinejoin="round"
               />
             </svg>
-            <p className="absolute top-4 inset-x-0 text-center text-white text-sm drop-shadow px-4">
-              {quad ? 'Page found: hold still and tap the button'
-                    : 'Point at the page or screen. You can adjust the corners after.'}
-            </p>
+            <p className="absolute top-4 inset-x-0 text-center text-white text-sm drop-shadow px-4">{hint}</p>
             <canvas ref={canvasRef} className="hidden" />
           </>
         )}

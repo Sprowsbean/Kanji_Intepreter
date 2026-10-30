@@ -7,6 +7,8 @@ Point a phone camera (or upload a photo) at Japanese text. The app finds the kan
 
 Goal: 100% free and open source. No Gemini/OpenAI/paid API, no tokens. School project, so keep it simple (CPU only, no GPU).
 
+How the scanner finds the page or text, crops and straightens it, and why it is built that way: [docs/SCANNER.md](docs/SCANNER.md).
+
 ## Architecture
 
 ```

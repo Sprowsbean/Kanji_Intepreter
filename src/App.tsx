@@ -6,14 +6,13 @@ import { LoadingAnimation } from './components/LoadingAnimation';
 import { ResultsView } from './components/ResultsView';
 import { ErrorView } from './components/ErrorView';
 import { analyzeKanjiImage } from './services/api';
-import { DEFAULT_QUAD } from './services/docScan';
-import type { Quad } from './services/docScan';
+import type { Found } from './components/CameraCapture';
 import type { KanjiCard } from './types/kanji';
 
 type AppState = 'home' | 'camera' | 'crop' | 'loading' | 'results' | 'error';
 
 // a photo waiting in the crop step, and where it came from (Back returns there)
-interface Pending { file: File; quad: Quad | null; from: 'camera' | 'upload' }
+interface Pending { file: File; found?: Found; from: 'camera' | 'upload' }
 
 function App() {
   const [state, setState] = useState<AppState>('home');
@@ -38,15 +37,15 @@ function App() {
     }
   };
 
-  // camera: start from the page the live detection found, or from the guide frame the user aimed with
-  const handleCapture = (file: File, quad: Quad | null) => {
-    setPending({ file, quad: quad ?? DEFAULT_QUAD, from: 'camera' });
+  // camera: start from the page or text the live detection found
+  const handleCapture = (file: File, found: Found) => {
+    setPending({ file, found, from: 'camera' });
     setState('crop');
   };
 
-  // upload: the crop step looks for a page in the picture itself
+  // upload: the crop step looks for a page or text in the picture itself
   const handleFileSelect = (file: File) => {
-    setPending({ file, quad: null, from: 'upload' });
+    setPending({ file, from: 'upload' });
     setState('crop');
   };
 
@@ -76,7 +75,7 @@ function App() {
       {state === 'crop' && pending && (
         <CropView
           file={pending.file}
-          initialQuad={pending.quad}
+          found={pending.found}
           onConfirm={analyze}
           onBack={handleCropBack}
           backLabel={pending.from === 'camera' ? 'Retake' : 'Back'}
