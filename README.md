@@ -1,143 +1,178 @@
-# Kanji Interpreter (open-source, no API)
+# Kanji Interpreter
 
-**Live demo:** https://kanji-intepreter.onrender.com (backend: https://okutsu1-kanji-ocr.hf.space; it sleeps when unused, so the first scan can take a minute)
+**Point your phone at Japanese text and learn every kanji in it: how to say it, what it means, and how it is
+built. Free, open source, no API keys.**
 
-Point a phone camera (or upload a photo) at Japanese text. The app finds the kanji words and shows, for each one:
-**hiragana, katakana, romaji, English meaning, on'yomi/kun'yomi, approximate JLPT level.**
+**Try it:** https://kanji-intepreter.onrender.com (works in a phone browser, nothing to install. The free server
+sleeps when unused, so the first scan of the day can take about a minute.)
 
-Goal: 100% free and open source. No Gemini/OpenAI/paid API, no tokens. School project, so keep it simple (CPU only, no GPU).
+## Why this exists
 
-How the scanner finds the page or text, crops and straightens it, and why it is built that way: [docs/SCANNER.md](docs/SCANNER.md).
+As a student learning Japanese, you meet kanji everywhere: on product labels, signs, menus, textbook pages.
+Translation apps tell you what a sentence *means*, but they don't teach you the characters: how each one is read,
+what it means on its own, and why a word is pronounced the way it is.
 
-## Architecture
+Apps that do this well usually call a paid AI API (OpenAI, Google Gemini and so on) for every photo. That needs an
+API key, costs money per scan, and sends your photos to a large company. A school project or a student can't
+keep that running for free.
+
+**The goal of this project: a kanji learning tool that costs nothing to run or to use.** Every part is free
+and open: open-source models, open dictionaries, free hosting (a Hugging Face Space for the backend, Render for
+the website). There are no API keys, no accounts and no per-scan fees.
+
+## What you can do with it
+
+1. **Scan.** Take a photo or upload one. Like the iPhone Notes scanner, a yellow box finds the page or the text
+   you are aiming at; a tilted page is cut out and straightened. You can adjust the box, down to a single kanji.
+2. **Get a card for every word.** Each kanji word found in the photo gets a card with:
+   - hiragana, katakana and romaji;
+   - the English meaning;
+   - on'yomi and kun'yomi;
+   - an approximate JLPT level;
+   - the sentence it was found in.
+
+   You can search the cards, or tap a kanji to see every word that uses it (先 in 先週, 先生, 先に).
+3. **Open a word to study each kanji.** Tapping a card opens a page with one card per kanji, showing:
+   - its own meaning, stroke count and level;
+   - all its readings with romaji;
+   - **the reading used in this word, highlighted** (in 先週 *senshuu*, 先 is read セン *sen*, not さき
+     *saki*).
+4. **Hear the pronunciation.** 🔊 buttons read the word and each reading aloud in Japanese. They use the
+   phone's own built-in voice (the browser's Web Speech API), so pronunciation costs nothing and needs no
+   server. If you hear no sound, add a Japanese voice in your phone's text-to-speech settings.
+
+## How it stays free
+
+| Part | What does it | Runs on | Cost |
+|---|---|---|---|
+| Find the page / text while you aim | [scanic](https://www.npmjs.com/package/scanic) page detector + meikiocr's small text detector | your phone (downloaded once, about 20 MB, then kept) | $0 |
+| Read the text (OCR) | [meikiocr](https://github.com/rtr46/meikiocr): small open models, CPU only | free Hugging Face Space | $0 |
+| Split into words, readings | SudachiPy, pykakasi | same Space | $0 |
+| Meanings, per-kanji readings | JMdict + KANJIDIC2 (offline dictionaries) | same Space | $0 |
+| Pronunciation | the phone's built-in Japanese voice | your phone | $0 |
+| The website | static files | free Render static site | $0 |
+
+Your photos only go to this project's own backend, never to Google or OpenAI.
+
+The trade-off: small free models are not as clever as a large paid AI (see Limits below), and the free server
+falls asleep when nobody uses it.
+
+## Limits (what to expect)
+
+- **Handwriting** and **decorative fonts** (heavy brush calligraphy, manga lettering, logos) are often misread.
+  Printed text works well.
+- **No context correction.** Each character is read on its own. A large AI would fix 先土 to 先生 from context;
+  this app can't.
+- **Furigana** (small readings next to kanji) can end up as separate text.
+- **Old / Traditional Chinese forms** (戰, 獸, 兒) are rarer in Japanese and sometimes misread; their modern
+  Japanese forms (戦, 獣, 児) read fine. On a chart of 32 traditional characters: 26 exact, 28 counting the
+  Japanese forms.
+- **Curved objects** (bottles, cans): the scanner straightens flat pages only.
+- **Readings and meanings** are real dictionary entries, but a word with several readings can get the wrong one.
+  The highlighted "reading used in this word" is skipped when a sound change makes it unclear (学校 is がっこう,
+  not がく + こう). The JLPT level is approximate.
+- **Pronunciation quality** depends on the phone's voice.
+
+## How it works
 
 ```
-Phone/browser (React + Vite + Tailwind)
-   CameraCapture.tsx -> File (jpeg)
-   src/services/api.ts  (POSTs to the backend; in dev, Vite proxies /analyze -> localhost:8000)
-        |  POST /analyze  (multipart "file")
+Phone browser (React + Vite + Tailwind)
+  Camera / upload -> scanner (on the phone): find page or text, straighten, crop
+        |  POST /analyze (the cropped photo)
         v
-FastAPI backend (backend/main.py)
-   1. meikiocr   : image -> lines of Japanese text   (ONNX, CPU, Apache-2.0; models auto-download from HuggingFace on first run)
-   2. SudachiPy  : text -> words, with context-aware reading + dictionary form (handles 今日=きょう, 食べた->食べる)
-   3. pykakasi   : katakana reading -> Hepburn romaji
-   4. jamdict    : JMdict (word meaning) + KANJIDIC2 (per-kanji meaning, on/kun, old JLPT level), offline
-   -> {"text": "...", "cards": [KanjiCard, ...]}
+Backend on a Hugging Face Space (FastAPI, backend/main.py)
+  1. meikiocr   : image -> lines of Japanese text (horizontal, vertical, rotated photos)
+  2. SudachiPy  : text -> words, with reading and dictionary form (今日 = きょう, 食べた -> 食べる)
+  3. pykakasi   : reading -> romaji
+  4. jamdict    : JMdict (word meaning) + KANJIDIC2 (each kanji: meaning, on/kun, level)
+  -> {"text": "...", "cards": [KanjiCard, ...]}   each card includes "chars": one entry per kanji
+        |
+        v
+Phone: word cards -> tap -> page per kanji -> 🔊 phone's voice
 ```
 
-`KanjiCard` (see `src/types/kanji.ts`): `kanji, romaji, readings, meaning, context, level`.
-Only tokens that contain kanji become cards; duplicates are removed.
+The scanner, why it's built from existing models, and how it was measured: [docs/SCANNER.md](docs/SCANNER.md).
+`KanjiCard` and the per-kanji `CharInfo` are defined in `src/types/kanji.ts`.
 
-## Run locally
+## Run it yourself
 
 ```bash
 # backend (Python 3.10+)
 cd backend
 python -m venv venv && source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000              # first run downloads OCR models (needs internet once)
-# OCR models are cached in backend/.cache/huggingface (next to the code, not in your home dir / C:).
-# To keep pip's download cache off C: as well: set PIP_CACHE_DIR=D:\pip-cache before `pip install`.
-# Windows: `pip install jamdict-data` fails (WinError 32, its setup.py deletes a file it still has open).
-# Workaround: download jamdict_data-1.5.tar.gz from PyPI, extract, unpack jamdict_data/jamdict.db.xz to
-# jamdict_data/jamdict.db (python lzma), delete the .xz, then `pip install .` in that folder.
-# Also set PYTHONUTF8=1 on Windows if printing Japanese to the console.
+uvicorn main:app --reload --port 8000              # first run downloads the OCR models (needs internet once)
 
 # frontend (new terminal, project root)
 npm install
 npm run dev          # http://localhost:5173 (camera works on localhost)
-npm run dev:phone    # https on your Wi-Fi, for testing on a phone (see below)
+npm run dev:phone    # https on your Wi-Fi, to test on a phone (see below)
 ```
 
-Windows shortcut: after the backend venv exists, double-click `start.bat` (starts both, phone mode).
+- **Model cache:** OCR models are cached in `backend/.cache/huggingface`. To keep pip's cache off C:, set
+  `PIP_CACHE_DIR=D:\pip-cache`.
+- **Windows: `pip install jamdict-data` fails** (WinError 32). Download `jamdict_data-1.5.tar.gz` from PyPI and
+  extract it. Unpack `jamdict_data/jamdict.db.xz` to `jamdict_data/jamdict.db` (Python's `lzma`), delete the
+  `.xz`, then run `pip install .` in that folder. Set `PYTHONUTF8=1` when printing Japanese to the console.
+- **Windows shortcut:** once the backend venv exists, double-click `start.bat` (starts both, phone mode).
+- **Testing on a phone (same Wi-Fi):**
+  1. Run `npm run dev:phone`; it prints `https://192.168.x.x:5173`.
+  2. Open that on the phone and accept the certificate warning once. The camera needs HTTPS.
+  3. If the phone can't connect, allow Node.js through Windows Firewall (private networks).
 
-**Testing on a phone (same Wi-Fi):** `npm run dev:phone` prints `Network: https://192.168.x.x:5173`.
-Open that on the phone and accept the self-signed certificate warning once (Advanced -> Proceed).
-The camera needs HTTPS, which is why this mode exists. Only the frontend port is needed: the Vite server
-proxies `/analyze` to the backend on the PC. If the phone can't connect, allow Node.js through Windows Firewall
-(private networks).
+## Deploy your own copy (free)
 
-## Deploy (free)
-
-The backend needs about **1 GB of RAM** once loaded (OCR models + Sudachi + JMdict) and a few seconds of CPU per
-photo, so where you host it matters:
-
-| Part | Free host | Why |
+| Part | Free host | Notes |
 |---|---|---|
-| Backend | **Hugging Face Space** (SDK = **Gradio**; hardware CPU basic or the free ZeroGPU, which runs on a CPU machine too) | Fits easily. `deploy_space.py` uploads `app.py` (serves the FastAPI backend + a Gradio test page), `main.py` and `requirements-space.txt`. Docker Spaces are now paid; `Dockerfile` is kept for other hosts (untested). |
-| Frontend | **Render Static Site** (live: https://kanji-intepreter.onrender.com) | It's only static files. Build: `npm install && npm run build`, publish dir: `dist`, env `VITE_API_URL=https://<user>-<space>.hf.space`. |
+| Backend | **Hugging Face Space**, SDK = Gradio, free hardware | It needs about 1 GB of RAM. `deploy_space.py` uploads `app.py`, `main.py` and `requirements-space.txt`. To update only the code, upload `main.py` in the Space's Files tab. |
+| Frontend | **Render static site** (`render.yaml`) | Build `npm ci && npm run build`, publish `dist`, set `VITE_API_URL=https://<user>-<space>.hf.space`. It redeploys on every push. |
 
-Steps:
-1. Backend: `hf auth login` (a *write* token from huggingface.co/settings/tokens), then from `backend/`:
-   `venv\Scripts\python deploy_space.py [space-name]`. It creates (or updates) a public Gradio Space and uploads
-   only `app.py`, `main.py` and `requirements-space.txt`. Wait for the build, then open
-   `https://<user>-<space-name>.hf.space` (test page) or `/docs` (API) to check it is up.
-2. Frontend: Render dashboard -> New -> Blueprint -> this repo (uses `render.yaml`); enter `VITE_API_URL` =
-   the Space URL from step 1. Render redeploys on every push to the chosen branch.
+1. **Backend:** run `hf auth login` (a *write* token, pasted in your own terminal). Then run
+   `venv\Scripts\python deploy_space.py [space-name]` from `backend/`. When the build finishes,
+   `https://<user>-<space-name>.hf.space` shows a test page.
+2. **Frontend:** in Render, go to New → Blueprint and pick this repo. Set `VITE_API_URL` to the Space URL.
 
-- **Not Render's free web service for the backend:** it has 512 MB RAM (the backend needs ~1 GB) and 0.1 CPU
-  (a 2-6 s scan would take about a minute).
-- A free Space goes to sleep when nobody uses it for a while; the first scan after that waits for it to wake up
-  and load the models.
-- CORS is currently `*` in `main.py`; restrict it to the frontend's domain if desired.
+Render's free *web service* is too small for the backend: 512 MB of RAM and a tenth of a CPU. Docker Spaces are
+now paid; the `Dockerfile` is kept for other hosts (untested).
 
-## Limitations (what to expect from the demo)
+## What was tested
 
-This app runs a small, free OCR model (about 44 MB, CPU only), not a large AI model like Gemini or GPT. Printed
-Japanese works well; these do not, or not reliably:
+All test photos are computer-generated (real text and pages placed on real photos). Real phone photos vary more.
 
-- **Handwriting**, including handwritten Japanese notes on a page. Handwritten kanji may be missed, or read as
-  real text and turned into cards.
-- **Decorative fonts:** heavy brush calligraphy, manga lettering, logos. Simple brush fonts mostly work.
-- **Text on very busy patterns.** Text on a dense repeating background may not be found at all.
-- **Furigana** (small readings above/beside kanji) is not handled specially and can end up as separate text.
-- **No context correction.** Each character is read on its own; a large AI model would fix 先土 to 先生 from
-  context, this app cannot.
-- **Speed:** a photo takes ~0.5-3 s on a laptop CPU. A photo taken sideways or upside down takes up to 4x longer,
-  because the app retries it at each rotation.
-- **Readings and meanings** come from dictionaries (JMdict/KANJIDIC2), so they are real dictionary entries, but the
-  word chosen for a kanji can be the wrong one when a word has several readings. The JLPT level is approximate.
-- Tested mostly on computer-generated test images (see below); real-world photos vary more.
+| Test | Result |
+|---|---|
+| Signs, sentences, menus (gothic + mincho, clean and phone-like) | all correct |
+| Vertical text (book pages, sentences, small kana) | 168 / 168 kanji words |
+| Photos turned 90 / 180 / 270° | same words as upright (72 / 72) |
+| Textbook pages with pen, pencil and highlighter marks | 0 / 204 words missed, 0 fake cards |
+| Fake kanji on photos without Japanese (textures, English signs) | fake cards cut from 35 to 5 |
+| Finding a tilted page in a cluttered photo (48 photos) | 46 / 48 with scanic (our own first try: 0 / 48) |
+| Words read from those 48 photos, raw vs. scanned | 371 → 1022 of 1200 |
+| Single kanji in a tight box (80 crops) | 71 / 80 right |
+| Live text box, small vs. big model (157 lines) | same text found, 5× faster |
 
-## What was tested vs not
+Details and comparisons: [docs/SCANNER.md](docs/SCANNER.md).
 
-- TESTED: Sudachi + pykakasi + jamdict card generation on sample sentences (東京, 車, 今日, 食べた).
-- TESTED (2026-10-21, Windows, Python 3.11, CPU): `/analyze` end to end with meikiocr 0.3.5 on synthetic images
-  (signs, sentences, menu; gothic + mincho fonts; "phone-like" versions with perspective, blur, noise, JPEG;
-  12MP frames with small text; EXIF-rotated JPEG). Horizontal text: all correct, ~0.6-2s per image.
-  Blank / English-only images -> 404, non-image -> 400. `run_ocr` returns `[{"text", "chars", "is_vertical"}]`.
-- TESTED (2026-10-22) on locally generated test images (not included in the repo):
-  - Screenshots of a JLPT kanji table and a brush-font kanji poster: all kanji found (big standalone kanji,
-    katakana/kanji lookalikes like カ/力, items far apart on one row).
-  - Vertical text (24 images: book pages, sentences, small kana; 2 fonts; clean + phone-like): 168/168 kanji words
-    found. Vertical columns are cut into characters and read as a horizontal line (the vertical model was weak).
-  - Rotated photos: every test image turned 90/180/270 degrees gives the same words as upright (72/72).
-  - Fake kanji (108 images incl. 20 real photos with no Japanese, textures, English signs): fake cards cut from
-    35 to 5 with no real words lost. Textbook pages with pencil/pen marks, highlighter, margin notes (18 images):
-    0 fake cards, 0/204 words missed.
-- TESTED (2026-10-21): frontend typecheck, lint, build; upload flow in desktop Chrome (cards + "no kanji" error).
-  Fixed: blank page in dev when an ad blocker blocks lucide-react's `icons/fingerprint.js`; camera never
-  stopped (stale `stream` in cleanup); camera now asks for 1080p instead of the 640x480 default.
-- Phone camera: used on a real phone over Wi-Fi (`npm run dev:phone`); photos taken sideways failed, fixed by the
-  rotation retry above.
-- NOT TESTED: the Dockerfile (Docker Desktop on the dev PC had corrupted storage), hosting on a free Space.
-  Dockerfile now runs as uid 1000 with HF_HOME in the user's home (HF Spaces requirement).
+## Roadmap
 
-## Known issues / TODO for Claude Code
+- **Handwriting (future interest):** recognize handwritten kanji, for example notes or practice sheets. This
+  needs an extra model next to the current OCR, which means more memory on the free server and a slower scan,
+  so it is left out for now to keep the app free and fast.
+- **Curved objects:** add UVDoc (an open model that flattens bent pages and labels) on the backend.
+- **JLPT levels:** use an open N5–N1 word list instead of KANJIDIC2's old 4-level scale.
+- **Old character forms:** also show the modern form's card (戰 → 戦).
+- **Study features:** save cards to a deck, export to Anki, furigana toggle.
+- Romaji with macrons (tōkyō) as an option.
+- Names: use JMnedict for people and place names.
 
-1. ~~Verify `/analyze` end to end~~ done on synthetic images (see above); fixed: cards now use the dictionary
-   form (食べ -> 食べる), JMdict entry is chosen by reading (降る = furu "to fall", not くだる), compounds missing
-   from JMdict are explained from sub-words (東京駅 = 東京 (Tokyo) + 駅 (station)). Still to do: try real phone photos.
-2. `level` is approximate: KANJIDIC2 only has the old 4-level JLPT scale, mapped to ranges like "N5-N4". Better: add an open JLPT word list (N5-N1) and look up by word.
-3. Romaji uses Hepburn without macrons (`toukyou`). Optionally convert to `tōkyō`.
-4. Better accuracy (handwriting, decorative fonts), if needed: (a) an optional "accurate mode" with a small
-   vision-language model (e.g. PaddleOCR-VL ~0.9B or Qwen-VL 2-3B) on a GPU; too slow on a free CPU host;
-   (b) an optional Gemini API key on the server, used for OCR only, with the local OCR as fallback (photos then
-   go to Google). Resize images client-side (~1280px) before upload to speed up the free host.
-5. Frontend polish ideas: draw boxes over detected text, tap a word to open its card, furigana toggle, save cards to a deck / export to Anki.
-6. ~~Rename `gemini.ts` to `api.ts`, remove `@google/generative-ai`~~ done (also removed unused `@supabase/supabase-js`).
-7. Rare words and names: jamdict-data may include JMnedict; `make_card` currently uses only entries, not `result.names`.
+## Credits and licenses
 
-## Stack / licenses
-
-meikiocr (Apache-2.0), SudachiPy + SudachiDict (Apache-2.0), pykakasi (GPL-3.0), jamdict (MIT) with JMdict/KANJIDIC2 data (EDRDG licence, attribute them in the UI/README), FastAPI.
+- **OCR:** [meikiocr](https://github.com/rtr46/meikiocr) (code Apache-2.0) and its models
+  `meiki.text.detect` / `meiki.txt.recognition` (LGPL-3.0) by rtr46.
+- **Page scanner:** [scanic](https://www.npmjs.com/package/scanic) (MIT).
+- **Language tools:** SudachiPy + SudachiDict (Apache-2.0), pykakasi (GPL-3.0), jamdict (MIT).
+- **Dictionaries:** [JMdict](https://www.edrdg.org/jmdict/j_jmdict.html) and
+  [KANJIDIC2](https://www.edrdg.org/wiki/index.php/KANJIDIC_Project). Both are © the Electronic Dictionary
+  Research and Development Group, used under the
+  [EDRDG licence](https://www.edrdg.org/edrdg/licence.html).
+- **Runtime and frameworks:** onnxruntime-web (MIT), FastAPI, Gradio, React.
