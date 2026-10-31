@@ -386,11 +386,31 @@ def make_card(surface: str, base: str, line: str) -> dict:
     }
 
 
+_flattener = None
+
+
+def flatten(img):
+    """EXPERIMENTAL: flattens a curved page or label before OCR, with UVDoc (PaddlePaddle/UVDoc_onnx,
+    Apache-2.0, ~32 MB). It predicts how the surface bends and resamples the photo flat; the output has the
+    input's size. Loaded on first use only, so normal scans don't pay for it."""
+    global _flattener
+    if _flattener is None:
+        import onnxruntime as ort
+        from huggingface_hub import hf_hub_download
+        path = hf_hub_download("PaddlePaddle/UVDoc_onnx", "inference.onnx")
+        _flattener = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    x = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32).transpose(2, 0, 1)[None] / 255.0
+    y = _flattener.run(None, {"image": x})[0][0].transpose(1, 2, 0)
+    return cv2.cvtColor((y * 255).clip(0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+async def analyze(file: UploadFile = File(...), curved: bool = False):
     img = cv2.imdecode(np.frombuffer(await file.read(), np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(400, "Not a valid image")
+    if curved:  # experimental: the user marked the text as being on a curved surface
+        img = flatten(img)
     result = analyze_image(img)
     if not result["cards"]:
         raise HTTPException(404, "No Kanji found in the image")
