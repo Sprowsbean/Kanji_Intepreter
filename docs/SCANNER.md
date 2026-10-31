@@ -21,7 +21,7 @@ the OCR.
 |---|---|---|
 | Find a page | [scanic](https://www.npmjs.com/package/scanic) ML detector (DocCornerNet, MIT): a neural network that predicts the 4 page corners | Small (about 1.9 MB model + 1.5 MB runtime), fast (about 25 ms per frame in a browser), runs on the phone, made for exactly this |
 | Straighten the page | scanic `extractDocument` (perspective correction) | Comes with it, tested |
-| Find text on non-documents | The OCR's own text detector (meikiocr, Apache-2.0), run in the browser with onnxruntime-web | The same model that reads the text afterwards, so the box shows what the OCR will see. Gives the same boxes as the backend (checked: 35/35 boxes identical) |
+| Find text on non-documents | The OCR's own text detector (meikiocr's `meiki.text.detect.v0.1`, LGPL-3.0), its small 320×192 variant, run in the browser with onnxruntime-web | The same model family that reads the text afterwards, so the box shows what the OCR will see. The small variant found the same text as the big one, 5× faster (see below) |
 | Read the text | meikiocr + the existing fixes (vertical text, rotation, fake-kanji filters) on the backend | Beat PaddleOCR/RapidOCR earlier (749/758 words vs 741/740, 7× fewer fake cards, 8× faster) |
 
 ## Why this is the best option we found (measured, not guessed)
@@ -46,6 +46,24 @@ they are and once through the app's scan step:
 | Screenshot, product label, marked textbook page | all words | all words |
 | JLPT table screenshot | 8 / 8 | 6 / 8 (the table is taken as the "page", so the header is left out; adjust the box to include it) |
 
+**Which text detector for the live box.** Text box → crop → real OCR, on 157 lines of test text (signs,
+screens, vertical book pages, marked textbook pages); a line counts only if read exactly:
+
+| Model | Lines read | Time per frame (1 CPU thread) | Size |
+|---|---|---|---|
+| 960×544 (first version) | 120 | 324 ms | 14.5 MB |
+| **320×192 (official small variant, used)** | **120** | **60 ms** | 14.1 MB |
+| 960×544 compressed to int8 | 61 | 441 ms | 4.6 MB |
+| 320×192 compressed to int8 | 82 | 72 ms | 4.2 MB |
+
+Compressing the model (int8) would have cut the download by 10 MB but lost half the text (all of it on vertical
+pages), so it is not used. Vertical text works: the box crop read 41 of 64 vertical lines exactly, the whole photo
+43 (misses are a wrong kana or dot in a sentence; the kanji words themselves came out right).
+
+**Tiny boxes.** The box can be shrunk to about one character. A crop that small is sent with a margin (half its
+short side, made by repeating the edge pixels): on single kanji (2 fonts × 4 sizes × 10 kanji) that took the OCR
+from 64 to 71 of 80 right and fake cards from 16 to 4. Crops bigger than 300 px are sent as they are.
+
 ## What we tried and dropped
 
 - **Our own page detectors.** Hand-made rules tuned on our own test images don't generalize, so we switched to a trained model.
@@ -60,8 +78,8 @@ they are and once through the app's scan step:
 
 - **Curved objects** (bottles, cans, bent pages): straightening assumes a flat page. The existing model for
   curves is **UVDoc** (PaddlePaddle, about 30 MB ONNX, about 1 s on a CPU). It would run on the backend, as a next step.
-- **Text box speed.** The text detector is heavier (14.5 MB model + 11 MB engine, downloaded once and then
-  cached; about 0.4 s per frame on a PC, slower on phones). It only runs when no page is found.
+- **Download.** The text detector is 14.1 MB + an 11 MB engine (about 2.5 MB compressed), downloaded once with
+  a progress bar and kept on the phone. It only runs when no page is found.
 - **Strongly rotated text** (about 35° and more) is hard for the text detector. A page around it is still
   found and straightened, which fixes the rotation.
 - The test photos are generated (pages composited onto real photos). Real phone photos are the next test set.

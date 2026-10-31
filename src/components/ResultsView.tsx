@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Search, X } from 'lucide-react';
 import type { KanjiCard } from '../types/kanji';
 import { KanjiFlashcard } from './KanjiFlashcard';
+import { KanjiDetail } from './KanjiDetail';
 
 interface ResultsViewProps {
   cards: KanjiCard[];
@@ -14,6 +15,26 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // a word's own page (one card per kanji); the list keeps its place underneath
+  const [opened, setOpened] = useState<KanjiCard | null>(null);
+  const listScroll = useRef(0);
+
+  // the phone's back gesture / browser Back closes the word's page instead of leaving the results
+  useEffect(() => {
+    const onPop = () => setOpened(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useLayoutEffect(() => {
+    window.scrollTo(0, opened ? 0 : listScroll.current);
+  }, [opened]);
+
+  const openCard = (card: KanjiCard) => {
+    listScroll.current = window.scrollY;
+    history.pushState({ kanjiCard: card.kanji }, '');
+    setOpened(card);
+  };
 
   // every single kanji in the found words; ones shared by several words (先 in 先週 / 先 / 先生) first
   const kanjiList = useMemo(() => {
@@ -38,6 +59,8 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
     setOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (opened) return <KanjiDetail card={opened} onBack={() => history.back()} />;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -130,7 +153,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
       <div className="max-w-2xl mx-auto px-4 mt-6 space-y-4">
         {shown.map((card) => (
-          <KanjiFlashcard key={card.kanji} card={card} selected={selected} onPickKanji={pick} />
+          <KanjiFlashcard key={card.kanji} card={card} selected={selected} onPickKanji={pick} onOpen={() => openCard(card)} />
         ))}
         {shown.length === 0 && (
           <p className="text-center text-gray-500 py-12">

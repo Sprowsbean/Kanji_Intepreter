@@ -10,17 +10,19 @@ export interface Box { x: number; y: number; w: number; h: number }
 export interface TextBox { x1: number; y1: number; x2: number; y2: number; score: number }
 
 const MODEL_URL =
-  'https://huggingface.co/rtr46/meiki.text.detect.v0/resolve/main/meiki.text.detect.v0.1.960x544.onnx';
+  'https://huggingface.co/rtr46/meiki.text.detect.v0/resolve/main/meiki.text.detect.v0.1.320x192.onnx';
 const ORT_VERSION = '1.20.1'; // keep in sync with package.json
-const IN_W = 960, IN_H = 544; // the model's input size
+// the model maker's small variant: on 157 test lines it found the same text as the 960x544 one, 5x faster
+// (60 vs 324 ms per frame on one CPU thread). An int8-compressed copy lost half the words, so it isn't used.
+const IN_W = 320, IN_H = 192; // the model's input size
 const MIN_SCORE = 0.3;
 const GAP = 2.5;        // join text up to this many character heights away
 const SIZE_RATIO = 2;  // ...if its characters are at most twice as big or small (a long false box is not)
 
 const WASM_URL = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort-wasm-simd-threaded.wasm`;
 // unpacked sizes of the two pinned files (the CDN sends the engine compressed, so its Content-Length is smaller)
-const SIZES = { wasm: 11_246_032, model: 14_503_825 };
-const CACHE = 'kanji-scanner-v1'; // the downloaded files are kept here, so the download happens once per phone
+const SIZES = { wasm: 11_246_032, model: 14_084_361 };
+const CACHE = 'kanji-scanner-v2'; // the downloaded files are kept here, so the download happens once per phone
 
 /** How far the first-time download is (engine + model, in bytes), for the loading message. */
 export interface LoadState { loaded: number; total: number; ready: boolean; failed: boolean }
@@ -34,6 +36,8 @@ export function onLoadState(listener: () => void) { listeners.add(listener); ret
 /** Fetches a file, from the scanner cache when it was downloaded before, reporting the bytes received. */
 async function download(url: string, report: (loaded: number) => void): Promise<Uint8Array> {
   const cache = typeof caches === 'undefined' ? null : await caches.open(CACHE).catch(() => null); // https only
+  // drop files of older versions (v1 held the bigger 960x544 model)
+  if (cache) caches.keys().then((ks) => ks.filter((k) => k.startsWith('kanji-scanner-') && k !== CACHE).forEach((k) => caches.delete(k))).catch(() => {});
   const cached = await cache?.match(url);
   const res = cached ?? await fetch(url);
   if (!res.ok || !res.body) throw new Error(`download failed (${res.status}): ${url}`);
@@ -97,6 +101,7 @@ export async function findText(source: CanvasImageSource, srcW: number, srcH: nu
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, IN_W, IN_H); // padding is zeros, as in meikiocr
+  ctx.imageSmoothingQuality = 'high'; // a 1920 px frame shrinks 6x: average the pixels, don't skip them
   ctx.drawImage(source, 0, 0, w, h);
   const rgba = ctx.getImageData(0, 0, IN_W, IN_H).data;
   const n = IN_W * IN_H;

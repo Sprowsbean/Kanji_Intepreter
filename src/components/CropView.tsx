@@ -18,7 +18,7 @@ interface CropViewProps {
 type Drag = 'move' | 'nw' | 'ne' | 'sw' | 'se';
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 };
-const MIN = 0.08;      // smallest box, as a fraction of the image
+const MIN_PX = 24;     // smallest box on screen: about one character, so a single kanji can be boxed
 const MAX_SIDE = 2400; // larger crops are scaled down before upload: faster on the free server, same OCR
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -32,6 +32,33 @@ function scaled(src: CanvasImageSource, sx: number, sy: number, sw: number, sh: 
   c.width = Math.max(1, Math.round(sw * scale));
   c.height = Math.max(1, Math.round(sh * scale));
   c.getContext('2d')!.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+// A box around one or two characters fills the whole crop, and the OCR misreads text that touches the
+// image edge (駅 read as 出 + 官). A margin of half the short side, made by repeating the edge pixels,
+// fixed most of it (single kanji, 2 fonts x 4 sizes: right 64 -> 71 of 80, fake cards 16 -> 4); a full-size
+// margin was worse again. Big crops are left alone, so page scans are unchanged.
+const SMALL = 300;
+
+function withMargin(src: HTMLCanvasElement): HTMLCanvasElement {
+  const { width: w, height: h } = src;
+  if (Math.min(w, h) > SMALL) return src;
+  const m = Math.round(Math.min(w, h) / 2);
+  const c = document.createElement('canvas');
+  c.width = w + 2 * m;
+  c.height = h + 2 * m;
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  // stretch the 1-pixel edges and corners outward, then draw the crop in the middle
+  const strips: [number, number, number, number, number, number, number, number][] = [
+    [0, 0, 1, 1, 0, 0, m, m], [w - 1, 0, 1, 1, m + w, 0, m, m],
+    [0, h - 1, 1, 1, 0, m + h, m, m], [w - 1, h - 1, 1, 1, m + w, m + h, m, m],
+    [0, 0, w, 1, m, 0, w, m], [0, h - 1, w, 1, m, m + h, w, m],
+    [0, 0, 1, h, 0, m, m, h], [w - 1, 0, 1, h, m + w, m, m, h],
+  ];
+  for (const [sx, sy, sw, sh, dx, dy, dw, dh] of strips) ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.drawImage(src, m, m);
   return c;
 }
 
@@ -98,6 +125,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
     if (!d || !rect) return;
     const dx = (e.clientX - d.x) / rect.width;
     const dy = (e.clientY - d.y) / rect.height;
+    const minW = Math.min(1, MIN_PX / rect.width), minH = Math.min(1, MIN_PX / rect.height);
     const s = d.start;
     if (d.mode === 'move') {
       setBox({ ...s, x: clamp(s.x + dx, 0, 1 - s.w), y: clamp(s.y + dy, 0, 1 - s.h) });
@@ -105,10 +133,10 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
     }
     // a corner moves two sides; the opposite corner stays put, so it is always a rectangle
     let { x, y, w, h } = s;
-    if (d.mode.includes('w')) { x = clamp(s.x + dx, 0, s.x + s.w - MIN); w = s.x + s.w - x; }
-    else w = clamp(s.w + dx, MIN, 1 - s.x);
-    if (d.mode.includes('n')) { y = clamp(s.y + dy, 0, s.y + s.h - MIN); h = s.y + s.h - y; }
-    else h = clamp(s.h + dy, MIN, 1 - s.y);
+    if (d.mode.includes('w')) { x = clamp(s.x + dx, 0, s.x + s.w - minW); w = s.x + s.w - x; }
+    else w = clamp(s.w + dx, minW, 1 - s.x);
+    if (d.mode.includes('n')) { y = clamp(s.y + dy, 0, s.y + s.h - minH); h = s.y + s.h - y; }
+    else h = clamp(s.h + dy, minH, 1 - s.y);
     setBox({ x, y, w, h });
   };
 
@@ -122,7 +150,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
       ? scaled(page, 0, 0, page.width, page.height)
       : scaled(img, Math.round(box.x * img.naturalWidth), Math.round(box.y * img.naturalHeight),
                Math.max(1, Math.round(box.w * img.naturalWidth)), Math.max(1, Math.round(box.h * img.naturalHeight)));
-    onConfirm(await toFile(canvas, file));
+    onConfirm(await toFile(withMargin(canvas), file));
   };
 
   const corner = (m: Drag, pos: string) => (

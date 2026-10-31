@@ -295,6 +295,44 @@ def kanji_info(word: str):
     return meanings, on[:3], kun[:3], level
 
 
+def char_cards(word: str, hira: str = "") -> list[dict]:
+    """One entry per kanji in the word (KANJIDIC2): its own meaning and readings, for the card's breakdown.
+    `used` marks the reading this word uses (東京 = とう+きょう, so 東 is トウ here, not ひがし): the readings
+    are matched in order against the word's reading; when one doesn't fit (sound changes like がっこう),
+    the rest are left unmarked."""
+    info = {}
+    for ch in dict.fromkeys(c for c in word if KANJI.search(c)):
+        for c in (x for x in jam.lookup(ch).chars if x.literal == ch):
+            info[ch] = {
+                "char": ch,
+                "meaning": ", ".join([m for m in c.meanings(english_only=True) if "**" not in m][:3]),
+                # KANJIDIC marks okurigana with a dot (た.べる) and prefixes/suffixes with "-"
+                "on": [{"kana": r.value, "romaji": romaji(r.value), "used": False}
+                       for g in c.rm_groups for r in g.readings if r.r_type == "ja_on"][:4],
+                "kun": [{"kana": r.value, "romaji": romaji(r.value.replace(".", "").replace("-", "")), "used": False}
+                        for g in c.rm_groups for r in g.readings if r.r_type == "ja_kun"][:4],
+                "level": OLD_TO_N.get(str(c.jlpt), "") if c.jlpt else "",
+                "strokes": c.stroke_count,
+            }
+            break
+    rest = hira
+    for ch in word:
+        if ch not in info:  # kana in the word reads as itself
+            k = kata_to_hira(ch)
+            if not rest.startswith(k):
+                break
+            rest = rest[len(k):]
+            continue
+        stems = [(kata_to_hira(r["kana"].split(".")[0].replace("-", "")), r) for r in info[ch]["on"] + info[ch]["kun"]]
+        fit = max((x for x in stems if x[0] and rest.startswith(x[0])), key=lambda x: len(x[0]), default=None)
+        if not fit:
+            break
+        if not any(r["used"] for r in info[ch]["on"] + info[ch]["kun"]):  # a kanji repeated in the word
+            fit[1]["used"] = True
+        rest = rest[len(fit[0]):]
+    return list(info.values())
+
+
 def glosses(word: str, hira: str = "", n_senses: int = 2) -> str:
     entries = jam.lookup(word).entries
     if not entries:
@@ -343,6 +381,8 @@ def make_card(surface: str, base: str, line: str) -> dict:
         "meaning": meaning,
         "context": context,
         "level": level,
+        "hiragana": seg["hira"],
+        "chars": char_cards(word, hira),
     }
 
 
