@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Crop, Maximize } from 'lucide-react';
 import { boxAround, findDocument, findTextBox, straighten } from '../services/scanner';
 import type { Box, CornerPoints } from '../services/scanner';
 import type { Found } from './CameraCapture';
+import { ScannerLoading } from './ScannerLoading';
 
 interface CropViewProps {
   file: File;
@@ -47,6 +48,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
   const imgRef = useRef<HTMLImageElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ mode: Drag; x: number; y: number; start: Box } | null>(null);
+  const touched = useRef(false); // the user moved the box: a late detection result must not undo that
 
   useEffect(() => {
     const u = URL.createObjectURL(file);
@@ -58,12 +60,13 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
     const img = imgRef.current;
     if (!img) return;
     let corners = doc;
-    if (!found) { // upload: look for a page, else for text, once
+    if (!found) { // upload: look for a page, else for text, once (Scan works meanwhile, on the whole photo)
       corners = await findDocument(img);
+      if (touched.current) { setStatus(''); return; }
       if (corners) { setDoc(corners); setMode('page'); }
       else {
         const t = await findTextBox(img, img.naturalWidth, img.naturalHeight);
-        if (t) setBox(t);
+        if (t && !touched.current) setBox(t);
       }
       setStatus('');
     }
@@ -84,6 +87,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
 
   const startDrag = (m: Drag) => (e: ReactPointerEvent) => {
     e.stopPropagation();
+    touched.current = true;
     (e.target as Element).setPointerCapture(e.pointerId);
     drag.current = { mode: m, x: e.clientX, y: e.clientY, start: box };
   };
@@ -141,6 +145,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
         <p className="text-gray-400 text-sm">
           {showPage ? 'Scan it, or adjust the box yourself' : "Drag inside the box to move it. Only what's inside is scanned."}
         </p>
+        {status && <div className="mt-2 flex justify-center"><ScannerLoading /></div>}
       </div>
 
       <div className="flex-1 flex items-center justify-center p-6 min-h-0"
@@ -178,13 +183,13 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
             Adjust box
           </button>
         ) : (
-          <button onClick={() => setBox(FULL)} disabled={isFull}
+          <button onClick={() => { touched.current = true; setBox(FULL); }} disabled={isFull}
                   className="flex items-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-full text-white disabled:opacity-40">
             <Maximize className="w-5 h-5" />
             Whole photo
           </button>
         )}
-        <button onClick={confirm} disabled={busy || !!status}
+        <button onClick={confirm} disabled={busy}
                 className="flex items-center gap-2 px-5 py-3 bg-pink-400 hover:bg-pink-500 rounded-full text-white font-medium disabled:opacity-60">
           <Check className="w-5 h-5" />
           Scan

@@ -17,19 +17,70 @@ const MIN_SCORE = 0.3;
 const GAP = 2.5;        // join text up to this many character heights away
 const SIZE_RATIO = 2;  // ...if its characters are at most twice as big or small (a long false box is not)
 
+const WASM_URL = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort-wasm-simd-threaded.wasm`;
+// unpacked sizes of the two pinned files (the CDN sends the engine compressed, so its Content-Length is smaller)
+const SIZES = { wasm: 11_246_032, model: 14_503_825 };
+const CACHE = 'kanji-scanner-v1'; // the downloaded files are kept here, so the download happens once per phone
+
+/** How far the first-time download is (engine + model, in bytes), for the loading message. */
+export interface LoadState { loaded: number; total: number; ready: boolean; failed: boolean }
+
+let state: LoadState = { loaded: 0, total: 0, ready: false, failed: false };
+const listeners = new Set<() => void>();
+const setState = (next: Partial<LoadState>) => { state = { ...state, ...next }; listeners.forEach((l) => l()); };
+export const loadState = () => state;
+export function onLoadState(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+
+/** Fetches a file, from the scanner cache when it was downloaded before, reporting the bytes received. */
+async function download(url: string, report: (loaded: number) => void): Promise<Uint8Array> {
+  const cache = typeof caches === 'undefined' ? null : await caches.open(CACHE).catch(() => null); // https only
+  const cached = await cache?.match(url);
+  const res = cached ?? await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`download failed (${res.status}): ${url}`);
+  const reader = res.body!.getReader();
+  const parts: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    loaded += value.length;
+    report(loaded);
+  }
+  const bytes = new Uint8Array(loaded);
+  let at = 0;
+  for (const p of parts) { bytes.set(p, at); at += p.length; }
+  // saved after reading, so the progress moves while it downloads; a full disk only costs a re-download
+  if (!cached) await cache?.put(url, new Response(bytes)).catch(() => {});
+  return bytes;
+}
+
 let session: Promise<Ort.InferenceSession> | null = null;
 let ortModule: typeof Ort | null = null;
 
-/** Loads the engine and the model once (about 26 MB the first time, cached by the browser after). */
+/** Loads the engine and the model once (about 26 MB the first time, then from the cache). */
 export function loadTextFinder(): Promise<Ort.InferenceSession> {
   if (!session) {
     session = (async () => {
-      const ort = await import('onnxruntime-web');
+      setState({ failed: false });
+      const got = [0, 0];
+      setState({ total: SIZES.wasm + SIZES.model });
+      const report = (i: number) => (loaded: number) => { got[i] = loaded; setState({ loaded: got[0] + got[1] }); };
+      const [ort, wasm, model] = await Promise.all([
+        import('onnxruntime-web'), download(WASM_URL, report(0)), download(MODEL_URL, report(1)),
+      ]);
       ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+      ort.env.wasm.wasmBinary = wasm; // already downloaded above, with progress
       ortModule = ort;
-      return ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
+      const s = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
+      setState({ ready: true });
+      return s;
     })();
-    session.catch(() => { session = null; }); // allow a retry after a network error
+    session.catch((err) => { // allow a retry after a network error
+      console.warn('text finder failed to load', err);
+      session = null;
+      setState({ failed: true });
+    });
   }
   return session;
 }

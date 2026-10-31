@@ -21,7 +21,8 @@ export async function analyzeKanjiImage(imageFile: File): Promise<KanjiCard[]> {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? 'Failed to analyze image');
+    // the status code tells a crash (500) from a too-large photo (413) etc., for bug reports
+    throw new Error(err.detail ?? `Failed to analyze image (server error ${res.status})`);
   }
   return (await res.json()).cards as KanjiCard[];
 }

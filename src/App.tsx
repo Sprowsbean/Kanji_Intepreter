@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HomeScreen } from './components/HomeScreen';
 import { CameraCapture } from './components/CameraCapture';
 import { CropView } from './components/CropView';
@@ -6,6 +6,7 @@ import { LoadingAnimation } from './components/LoadingAnimation';
 import { ResultsView } from './components/ResultsView';
 import { ErrorView } from './components/ErrorView';
 import { analyzeKanjiImage } from './services/api';
+import { preloadScanner } from './services/scanner';
 import type { Found } from './components/CameraCapture';
 import type { KanjiCard } from './types/kanji';
 
@@ -19,6 +20,9 @@ function App() {
   const [kanjiCards, setKanjiCards] = useState<KanjiCard[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
+
+  // start the scanner's first-time download right away, so it is ready when the camera opens
+  useEffect(() => { preloadScanner(); }, []);
 
   const handleCameraClick = () => {
     setState('camera');

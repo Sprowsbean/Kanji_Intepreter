@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Circle } from 'lucide-react';
 import { findDocument, findTextBox } from '../services/scanner';
+import { ScannerLoading } from './ScannerLoading';
 import type { Box, CornerPoints } from '../services/scanner';
 
 /** what the live detection saw when the photo was taken (both in the photo's own coordinates) */
@@ -172,7 +173,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 strokeLinejoin="round"
               />
             </svg>
-            <p className="absolute top-4 inset-x-0 text-center text-white text-sm drop-shadow px-4">{hint}</p>
+            <div className="absolute top-4 inset-x-0 flex flex-col items-center gap-2 px-4">
+              <p className="text-center text-white text-sm drop-shadow">{hint}</p>
+              <ScannerLoading />
+            </div>
             <canvas ref={canvasRef} className="hidden" />
           </>
         )}
