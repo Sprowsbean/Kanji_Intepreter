@@ -65,7 +65,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
   return (
     <div className="min-h-screen bg-matcha-bg pb-8">
       <div className="sticky top-0 bg-matcha-surface border-b border-matcha-border z-20">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+        <div className="max-w-2xl mx-auto px-4 pt-6 pb-3 flex items-center gap-2">
           <button
             onClick={onBack}
             className="w-11 h-11 inline-flex items-center justify-center rounded-full hover:bg-matcha-badge transition-colors"
@@ -75,7 +75,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
           </button>
           <div>
             <h1 className="text-xl font-bold text-matcha-text">Results</h1>
-            <p className="text-sm text-matcha-muted">
+            <p className="text-xs text-matcha-primary">
               {shown.length === cards.length
                 ? `${cards.length} words · ${kanjiList.length} kanji`
                 : `${shown.length} of ${cards.length} words`}
@@ -151,7 +151,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
       {open && <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />}
 
-      <div className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
+      <div className="max-w-2xl mx-auto px-4 pt-3 space-y-2">
         {shown.map((card) => (
           <KanjiFlashcard key={card.kanji} card={card} selected={selected} onPickKanji={pick} onOpen={() => openCard(card)} />
         ))}

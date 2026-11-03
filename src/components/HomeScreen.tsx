@@ -20,7 +20,7 @@ export function HomeScreen({ onCameraClick, onFileSelect }: HomeScreenProps) {
           <span className="font-kanji font-black text-[60px] leading-none text-matcha-onPrimary">i漢</span>
         </div>
         <h1 className="mt-6 text-4xl font-bold text-matcha-text">iKan</h1>
-        <p className="mt-2 text-lg text-matcha-muted">I can read kanji now.</p>
+        <p className="mt-2 text-lg text-matcha-muted">IKan read kanji now.</p>
       </div>
 
       <div className="w-full max-w-md mx-auto">

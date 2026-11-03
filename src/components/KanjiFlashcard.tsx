@@ -12,6 +12,9 @@ interface KanjiFlashcardProps {
 
 const isKanji = (ch: string) => /[一-鿿々]/.test(ch);
 
+// the card shows just the sentence the word was found in: 「先週、先生と…」 without the "Found in:" label
+const sentence = (context: string) => context.replace(/^Found in: 「(.*)」/, '$1');
+
 export function KanjiFlashcard({ card, selected, onPickKanji, onOpen }: KanjiFlashcardProps) {
   const kanji = [...new Set([...card.kanji].filter(isKanji))];
 
@@ -48,19 +51,19 @@ export function KanjiFlashcard({ card, selected, onPickKanji, onOpen }: KanjiFla
         </span>
       </div>
 
-      <p className="mt-3 text-[17px] font-semibold text-matcha-text">
+      <p className="mt-2 text-[17px] font-semibold text-matcha-text">
         {card.hiragana ? `${card.hiragana} · ${card.romaji}` : card.readings}
       </p>
-      <p className="mt-1 text-[15px] text-matcha-text">{card.meaning}</p>
+      <p className="mt-0.5 text-[15px] text-matcha-muted">{card.meaning}</p>
 
       {card.context && (
         <p className="mt-3 bg-matcha-tint rounded-[10px] px-3 py-2.5 text-sm text-matcha-muted font-kanji">
-          {card.context}
+          {sentence(card.context)}
         </p>
       )}
 
       {onOpen && kanji.length > 0 && (
-        <p className="mt-4 pt-3 border-t border-matcha-divider flex items-center justify-between text-sm font-medium text-matcha-primary">
+        <p className="mt-3 pt-3 border-t border-matcha-divider flex items-center justify-between text-sm font-medium text-matcha-text">
           <span>Each kanji: {kanji.join(' · ')}</span>
           <ChevronRight className="w-4 h-4" />
         </p>
