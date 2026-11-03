@@ -65,7 +65,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
   return (
     <div className="min-h-screen bg-matcha-bg pb-8">
       <div className="sticky top-0 bg-matcha-surface border-b border-matcha-border z-20">
-        <div className="max-w-2xl mx-auto px-4 pt-6 pb-3 flex items-center gap-2">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pt-6 pb-3 flex items-center gap-2">
           <button
             onClick={onBack}
             className="w-11 h-11 inline-flex items-center justify-center rounded-full hover:bg-matcha-badge transition-colors"
@@ -83,7 +83,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
           </div>
         </div>
 
-        <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pb-3 flex gap-2">
           <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-matcha-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -107,7 +107,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
         </div>
 
         {selected && (
-          <div className="max-w-2xl mx-auto px-4 pb-3">
+          <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pb-3">
             <button
               onClick={() => pick(null)}
               className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-matcha-badge text-sm text-matcha-text hover:opacity-80"
@@ -119,11 +119,11 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
         )}
 
         {open && (
-          <div className="max-w-2xl mx-auto px-4 pb-4">
-            <div className="max-h-72 overflow-y-auto rounded-xl border border-matcha-border bg-matcha-card p-2 grid grid-cols-5 sm:grid-cols-8 gap-2">
+          <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pb-4">
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-matcha-border bg-matcha-card p-2 grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-12 gap-2">
               <button
                 onClick={() => pick(null)}
-                className={`col-span-5 sm:col-span-8 py-2 rounded-md text-sm ${
+                className={`col-span-5 sm:col-span-8 lg:col-span-12 py-2 rounded-md text-sm ${
                   selected ? 'text-matcha-muted hover:bg-matcha-tint' : 'bg-matcha-primary text-matcha-onPrimary'
                 }`}
               >
@@ -151,12 +151,12 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
       {open && <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />}
 
-      <div className="max-w-2xl mx-auto px-4 pt-3 space-y-2">
+      <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pt-3 space-y-2 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3 lg:items-start">
         {shown.map((card) => (
           <KanjiFlashcard key={card.kanji} card={card} selected={selected} onPickKanji={pick} onOpen={() => openCard(card)} />
         ))}
         {shown.length === 0 && (
-          <p className="text-center text-matcha-muted py-12">
+          <p className="text-center text-matcha-muted py-12 lg:col-span-2">
             No words match.{' '}
             <button onClick={() => { setQuery(''); pick(null); }} className="underline">
               Show all

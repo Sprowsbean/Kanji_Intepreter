@@ -79,7 +79,7 @@ export function KanjiDetail({ card, onBack }: KanjiDetailProps) {
   return (
     <div className="min-h-screen bg-matcha-bg pb-8">
       <div className="sticky top-0 bg-matcha-surface border-b border-matcha-border z-20">
-        <div className="max-w-2xl mx-auto px-4 pt-6 pb-3 flex items-center gap-2">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pt-6 pb-3 flex items-center gap-2">
           <button
             onClick={onBack}
             className="w-11 h-11 inline-flex items-center justify-center rounded-full hover:bg-matcha-badge transition-colors"
@@ -94,27 +94,29 @@ export function KanjiDetail({ card, onBack }: KanjiDetailProps) {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-3 space-y-2">
-        <div className="bg-matcha-primary text-matcha-onPrimary rounded-[20px] p-5">
+      <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 md:px-6 pt-3 space-y-2 lg:space-y-0 lg:grid lg:grid-cols-[340px_1fr] lg:gap-4 lg:items-start">
+        <div className="bg-matcha-primary text-matcha-onPrimary rounded-[20px] p-5 lg:p-6 lg:sticky lg:top-[5.75rem]">
           <div className="flex items-center gap-1">
-            <span className="font-kanji font-bold text-[44px] leading-tight">{card.kanji}</span>
+            <span className="font-kanji font-bold text-[44px] lg:text-[56px] leading-tight">{card.kanji}</span>
             <SpeakButton text={card.hiragana || card.kanji} label={`Say ${card.kanji}`} big onDark />
           </div>
           <p className="mt-1 text-sm text-[#A8CB98]">{card.hiragana ? `${card.hiragana} · ` : ''}{card.romaji}</p>
           <p className="mt-1 text-sm font-semibold text-matcha-onPrimary">{card.meaning}</p>
         </div>
 
-        {chars.map((c) => <CharCard key={c.char} info={c} />)}
+        <div className="space-y-2">
+          {chars.map((c) => <CharCard key={c.char} info={c} />)}
 
-        {chars.some((c) => [...c.on, ...c.kun].some((r) => r.used)) && (
-          <p className="pt-1 text-xs text-matcha-muted">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-matcha-primary align-middle mr-1.5" />
-            the reading used in {card.kanji}
-          </p>
-        )}
-        {missing && (
-          <p className="text-center text-matcha-muted py-6">Details for each kanji aren't available from the server yet.</p>
-        )}
+          {chars.some((c) => [...c.on, ...c.kun].some((r) => r.used)) && (
+            <p className="pt-1 text-xs text-matcha-muted">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-matcha-primary align-middle mr-1.5" />
+              the reading used in {card.kanji}
+            </p>
+          )}
+          {missing && (
+            <p className="text-center text-matcha-muted py-6">Details for each kanji aren't available from the server yet.</p>
+          )}
+        </div>
       </div>
     </div>
   );

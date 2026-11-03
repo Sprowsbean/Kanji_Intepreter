@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* behind every screen, also when a laptop window is taller than the page or the page bounces */
+body {
+  @apply bg-matcha-bg text-matcha-text;
+}

@@ -14,12 +14,12 @@ export function HomeScreen({ onCameraClick, onFileSelect }: HomeScreenProps) {
   };
 
   return (
-    <div className="min-h-screen bg-matcha-bg flex flex-col justify-between px-6 pt-[120px] pb-10">
+    <div className="min-h-screen bg-matcha-bg flex flex-col justify-between md:justify-center md:gap-14 px-6 pt-[120px] md:pt-10 pb-10">
       <div className="flex flex-col items-center text-center">
-        <div className="w-[112px] h-[112px] rounded-[28px] bg-matcha-primary flex items-center justify-center">
-          <span className="font-kanji font-black text-[60px] leading-none text-matcha-onPrimary">i漢</span>
+        <div className="w-[112px] h-[112px] lg:w-[128px] lg:h-[128px] rounded-[28px] lg:rounded-[32px] bg-matcha-primary flex items-center justify-center">
+          <span className="font-kanji font-black text-[60px] lg:text-[68px] leading-none text-matcha-onPrimary">i漢</span>
         </div>
-        <h1 className="mt-6 text-4xl font-bold text-matcha-text">iKan</h1>
+        <h1 className="mt-6 text-4xl lg:text-5xl font-bold text-matcha-text">iKan</h1>
         <p className="mt-2 text-lg text-matcha-muted">IKan read kanji now.</p>
       </div>
 
