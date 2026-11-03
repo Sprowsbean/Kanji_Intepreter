@@ -1,4 +1,6 @@
-# Kanji Interpreter
+# iKan (i漢)
+
+*I can read kanji now.*
 
 **Point your phone at Japanese text and learn every kanji in it: how to say it, what it means, and how it is
 built. Free, open source, no API keys.**

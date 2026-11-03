@@ -218,7 +218,7 @@ export function CropView({ file, found, onConfirm, onBack, backLabel }: CropView
           </button>
         )}
         <button onClick={confirm} disabled={busy}
-                className="flex items-center gap-2 px-5 py-3 bg-pink-400 hover:bg-pink-500 rounded-full text-white font-medium disabled:opacity-60">
+                className="flex items-center gap-2 px-5 py-3 bg-[#8DB88D] hover:bg-[#7DA87D] rounded-full text-matcha-text font-semibold disabled:opacity-60">
           <Check className="w-5 h-5" />
           Scan
         </button>

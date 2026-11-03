@@ -194,10 +194,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         <button
           onClick={capturePhoto}
           disabled={!!error}
-          className="p-4 bg-pink-400 hover:bg-pink-500 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-4 bg-[#8DB88D] hover:bg-[#7DA87D] rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Capture photo"
         >
-          <Circle className="w-12 h-12 text-white" strokeWidth={2} />
+          <Circle className="w-12 h-12 text-matcha-text" strokeWidth={2} />
         </button>
 
         <div className="w-14"></div>

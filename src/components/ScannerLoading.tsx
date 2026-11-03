@@ -24,7 +24,7 @@ export function ScannerLoading() {
           : 'Starting the scanner…'}
       </p>
       <div className="mt-2 h-1.5 rounded-full bg-gray-700 overflow-hidden">
-        <div className={`h-full bg-yellow-400 transition-all ${s.total ? '' : 'w-1/3 animate-pulse'}`}
+        <div className={`h-full bg-[#8DB88D] transition-all ${s.total ? '' : 'w-1/3 animate-pulse'}`}
              style={s.total ? { width: `${pct}%` } : undefined} />
       </div>
       <p className="mt-1 text-xs text-gray-300">You can already take the photo.</p>

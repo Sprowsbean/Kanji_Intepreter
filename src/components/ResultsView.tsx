@@ -63,19 +63,19 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
   if (opened) return <KanjiDetail card={opened} onBack={() => history.back()} />;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      <div className="sticky top-0 bg-white shadow-sm z-20">
+    <div className="min-h-screen bg-matcha-bg pb-8">
+      <div className="sticky top-0 bg-matcha-surface border-b border-matcha-border z-20">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="w-11 h-11 inline-flex items-center justify-center rounded-full hover:bg-matcha-badge transition-colors"
             aria-label="Go back"
           >
-            <ArrowLeft className="w-6 h-6 text-gray-700" />
+            <ArrowLeft className="w-6 h-6 text-matcha-primary" />
           </button>
           <div>
-            <h1 className="text-xl font-light text-gray-900">Analysis Results</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-xl font-bold text-matcha-text">Results</h1>
+            <p className="text-sm text-matcha-muted">
               {shown.length === cards.length
                 ? `${cards.length} words · ${kanjiList.length} kanji`
                 : `${shown.length} of ${cards.length} words`}
@@ -85,20 +85,20 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
         <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2">
           <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-matcha-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search kanji, reading or meaning"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
+              className="w-full h-11 pl-9 pr-3 rounded-xl border border-matcha-border bg-matcha-card text-base text-matcha-text placeholder:text-matcha-muted focus:outline-none focus:ring-2 focus:ring-matcha-primary/40"
             />
           </div>
           <button
             onClick={() => setOpen(!open)}
             aria-expanded={open}
-            className={`flex items-center gap-1 px-3 py-2 rounded-lg border text-base whitespace-nowrap transition-colors ${
-              selected ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            className={`flex items-center gap-1 h-11 px-3 rounded-xl border text-base font-medium whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-matcha-primary/40 ${
+              selected ? 'bg-matcha-primary text-matcha-onPrimary border-matcha-primary font-kanji' : 'bg-matcha-card text-matcha-text border-matcha-border hover:bg-matcha-tint'
             }`}
           >
             {selected ?? 'Kanji'}
@@ -110,7 +110,7 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
           <div className="max-w-2xl mx-auto px-4 pb-3">
             <button
               onClick={() => pick(null)}
-              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 text-sm text-gray-700 hover:bg-gray-200"
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-matcha-badge text-sm text-matcha-text hover:opacity-80"
             >
               Words with {selected}
               <X className="w-3.5 h-3.5" />
@@ -120,11 +120,11 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
         {open && (
           <div className="max-w-2xl mx-auto px-4 pb-4">
-            <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 grid grid-cols-5 sm:grid-cols-8 gap-2">
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-matcha-border bg-matcha-card p-2 grid grid-cols-5 sm:grid-cols-8 gap-2">
               <button
                 onClick={() => pick(null)}
                 className={`col-span-5 sm:col-span-8 py-2 rounded-md text-sm ${
-                  selected ? 'text-gray-600 hover:bg-gray-100' : 'bg-gray-900 text-white'
+                  selected ? 'text-matcha-muted hover:bg-matcha-tint' : 'bg-matcha-primary text-matcha-onPrimary'
                 }`}
               >
                 All words
@@ -133,8 +133,8 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
                 <button
                   key={ch}
                   onClick={() => pick(ch)}
-                  className={`relative aspect-square rounded-md text-2xl flex items-center justify-center transition-colors ${
-                    ch === selected ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900 hover:bg-gray-100'
+                  className={`relative aspect-square rounded-md font-kanji font-bold text-2xl flex items-center justify-center transition-colors ${
+                    ch === selected ? 'bg-matcha-primary text-matcha-onPrimary' : 'bg-matcha-tint text-matcha-text hover:bg-matcha-badge'
                   }`}
                   aria-label={`${ch}, in ${count} word${count > 1 ? 's' : ''}`}
                 >
@@ -151,12 +151,12 @@ export function ResultsView({ cards, onBack }: ResultsViewProps) {
 
       {open && <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />}
 
-      <div className="max-w-2xl mx-auto px-4 mt-6 space-y-4">
+      <div className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
         {shown.map((card) => (
           <KanjiFlashcard key={card.kanji} card={card} selected={selected} onPickKanji={pick} onOpen={() => openCard(card)} />
         ))}
         {shown.length === 0 && (
-          <p className="text-center text-gray-500 py-12">
+          <p className="text-center text-matcha-muted py-12">
             No words match.{' '}
             <button onClick={() => { setQuery(''); pick(null); }} className="underline">
               Show all
